@@ -24,7 +24,7 @@ param(
     [switch]$NoServices   # chi de thu tren may dev: chay thang 2 file exe thay cho 2 Windows Service
 )
 $ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is very slow with the progress bar on PS 5.1
+$ProgressPreference = 'SilentlyContinue'   # no progress bars from the web cmdlets (slow on PS 5.1)
 
 $AssetName = 'Kyoshin-win-x64.zip'
 $Root = [IO.Path]::GetFullPath($Root).TrimEnd('\')
@@ -151,6 +151,44 @@ function Start-Kyoshin {
     }
 }
 
+# Download to a file. Not Invoke-WebRequest: on PS 5.1 it can hang for hours on a large file.
+# A stalled connection fails after 60 s; 3 attempts.
+function Save-Url([string]$url, [string]$path) {
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            $req = [Net.HttpWebRequest]::Create($url)
+            $req.UserAgent = 'KyoshinUpdater'
+            $req.Timeout = 30000            # connect + first answer
+            $req.ReadWriteTimeout = 60000   # no data for 60 s = failed
+            $resp = $req.GetResponse()
+            try {
+                $total = $resp.ContentLength
+                $in = $resp.GetResponseStream()
+                $out = [IO.File]::Create($path)
+                try {
+                    $buf = New-Object byte[] 1048576
+                    $done = 0L
+                    $next = 10MB
+                    while (($n = $in.Read($buf, 0, $buf.Length)) -gt 0) {
+                        $out.Write($buf, 0, $n)
+                        $done += $n
+                        if ($total -gt 20MB -and $done -ge $next) { Write-Host ('  {0:N0} / {1:N0} MB' -f ($done / 1MB), ($total / 1MB)); $next += 10MB }
+                    }
+                }
+                finally { $out.Dispose(); $in.Dispose() }
+                if ($total -gt 0 -and $done -ne $total) { throw "tai thieu ($done / $total byte)" }
+            }
+            finally { $resp.Close() }
+            return
+        }
+        catch {
+            if ($attempt -ge 3) { throw "Tai that bai sau 3 lan: $($_.Exception.Message)" }
+            Log "  [!] Tai loi ($($_.Exception.Message)), thu lai lan $($attempt + 1) ..."
+            Start-Sleep -Seconds 5
+        }
+    }
+}
+
 function Remove-OldBackups {
     Get-ChildItem -LiteralPath (Join-Path $Root 'backup') -Directory -ErrorAction SilentlyContinue |
         Sort-Object CreationTime -Descending | Select-Object -Skip 3 |
@@ -177,9 +215,11 @@ function Get-FromGitHub([string]$installed) {
     if (-not $asset) { throw "Ban $($rel.tag_name) tren GitHub chua co file $AssetName (GitHub Actions chua build xong?)" }
     $zipPath = Join-Path $Work $AssetName
     Log ("Tai {0} ({1:N1} MB) ..." -f $AssetName, ($asset.size / 1MB))
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -Headers $GitHubHeaders -UseBasicParsing -TimeoutSec 900
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    Save-Url $asset.browser_download_url $zipPath
+    Log ('  Tai xong sau {0:N0} s' -f $sw.Elapsed.TotalSeconds)
     $sumAsset = $rel.assets | Where-Object { $_.name -eq "$AssetName.sha256" } | Select-Object -First 1
-    if ($sumAsset) { Invoke-WebRequest -Uri $sumAsset.browser_download_url -OutFile "$zipPath.sha256" -Headers $GitHubHeaders -UseBasicParsing -TimeoutSec 60 }
+    if ($sumAsset) { Save-Url $sumAsset.browser_download_url "$zipPath.sha256" }
     return @{ Zip = $zipPath; Source = "GitHub $($rel.tag_name)" }
 }
 
