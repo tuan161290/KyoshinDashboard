@@ -1,0 +1,322 @@
+@model List<KyoshinDashboard.Models.MachineState>
+@{
+    ViewData["Title"] = "Giám sát I/O PLC";
+}
+
+@using Kyoshin.Plc
+@functions {
+    // Same mapping as FXDataCommnunication: physical input (X, octal), read directly by the agent
+    public static string GetPlcAddress(int machineId, int signal, FxIoBlock block)
+    {
+        return FxIoMap.GetInputLabel(machineId, signal, block);
+    }
+}
+
+<div class="page-header">
+    <h1>🔌 Giám sát tín hiệu I/O PLC</h1>
+    <div class="io-filter-group">
+        <!-- Tab selector -->
+        <div class="io-tabs">
+            <button class="io-tab-btn active" onclick="filterPlcType('all', this)">Tất cả (@(FxIoMap.TOTAL_MACHINES * 6))</button>
+            <button class="io-tab-btn" onclick="filterPlcType('status', this)">Trạng thái - X000 (@(FxIoMap.TOTAL_MACHINES * 3))</button>
+            <button class="io-tab-btn" onclick="filterPlcType('error', this)">Báo lỗi - X120 (@(FxIoMap.TOTAL_MACHINES * 3))</button>
+        </div>
+    </div>
+</div>
+
+<div class="io-toolbar">
+    <!-- Search box -->
+    <div class="io-search-box">
+        <span class="io-search-icon">🔍</span>
+        <input type="text" id="ioSearchInput" placeholder="Tìm kiếm địa chỉ, tên máy..." onkeyup="filterIoTable()" />
+    </div>
+    
+    <!-- Select filters -->
+    <div class="filter-controls">
+        <label>Station:
+            <select id="ioStationFilter" onchange="filterIoTable()">
+                <option value="all">Tất cả Station</option>
+                @for (int s = 0; s < FxIoMap.Stations.Length; s++)
+                {
+                    int first = s * FxIoMap.MACHINES_PER_STATION + 1;
+                    <option value="@FxIoMap.Stations[s]">Station @FxIoMap.Stations[s] (M@(first) - M@(first + FxIoMap.MACHINES_PER_STATION - 1))</option>
+                }
+            </select>
+        </label>
+        
+        <label>Trạng thái:
+            <select id="ioStateFilter" onchange="filterIoTable()">
+                <option value="all">Tất cả trạng thái</option>
+                <option value="on">Có tín hiệu bật (ON)</option>
+                <option value="off">Tất cả đều tắt (OFF)</option>
+            </select>
+        </label>
+    </div>
+</div>
+
+<div class="history-table-wrapper" style="margin-top:0; max-height: calc(100vh - 220px); overflow-y: auto;">
+    <table class="data-table" id="ioTable">
+        <thead>
+            <tr>
+                <th rowspan="2" style="width: 80px; vertical-align: middle; text-align: center;">Máy</th>
+                <th colspan="3" class="col-group-status plc-header-status" style="width: 45%;">Trạng thái máy (X000~X117)</th>
+                <th colspan="3" class="col-group-error plc-header-error" style="width: 45%;">Tín hiệu báo lỗi (X120~X237)</th>
+            </tr>
+            <tr>
+                <th class="col-status" style="width: 15%;">Đỏ (DỪNG)</th>
+                <th class="col-status" style="width: 15%;">Vàng (CHỜ)</th>
+                <th class="col-status" style="width: 15%;">Xanh (CHẠY)</th>
+                <th class="col-error" style="width: 15%;" title="@ErrorNames.Full(ErrorType.Out)">@ErrorNames.Short(ErrorType.Out)</th>
+                <th class="col-error" style="width: 15%;" title="@ErrorNames.Full(ErrorType.Trash)">@ErrorNames.Short(ErrorType.Trash)</th>
+                <th class="col-error" style="width: 15%;" title="@ErrorNames.Full(ErrorType.Other)">@ErrorNames.Short(ErrorType.Other)</th>
+            </tr>
+        </thead>
+        <tbody>
+            @for (int i = 1; i <= FxIoMap.TOTAL_MACHINES; i++)
+            {
+                var m = Model.FirstOrDefault(x => x.MachineId == i);
+                string station = FxIoMap.Stations[FxIoMap.GetStationIndex(i)];
+
+                // Status block addresses (X000~)
+                var addrS0 = GetPlcAddress(i, 0, FxIoBlock.Status); // Red
+                var addrS1 = GetPlcAddress(i, 1, FxIoBlock.Status); // Yellow
+                var addrS2 = GetPlcAddress(i, 2, FxIoBlock.Status); // Green
+
+                // Error block addresses (X120~)
+                var addrE0 = GetPlcAddress(i, 0, FxIoBlock.Error); // Out
+                var addrE1 = GetPlcAddress(i, 1, FxIoBlock.Error); // Trash
+                var addrE2 = GetPlcAddress(i, 2, FxIoBlock.Error); // Other
+                
+                // Active states
+                bool s0On = m?.Status == KyoshinDashboard.Models.MachineStatus.Red;
+                bool s1On = m?.Status == KyoshinDashboard.Models.MachineStatus.Yellow;
+                bool s2On = m?.Status == KyoshinDashboard.Models.MachineStatus.Green;
+                
+                bool e0On = m?.OutSignal ?? false;
+                bool e1On = m?.TrashSignal ?? false;
+                bool e2On = m?.OtherSignal ?? false;
+
+                <tr data-station="@station">
+                    <td style="font-weight: 700; text-align: center; font-size: 14px; background: var(--bg-input);">M@(i)</td>
+                    
+                    <!-- Status block cells (X000~) -->
+                    <td id="cell-status-@i-0" class="io-cell col-status @(s0On ? "cell-red-active" : "")" data-active="@(s0On ? "true" : "false")" title="@FxIoMap.GetDescription(i, 0, FxIoBlock.Status) - Máy @i - Đèn Đỏ (DỪNG)">
+                        <div class="io-grid-cell">
+                            <span class="io-cell-address">@addrS0</span>
+                            <span class="io-dot @(s0On ? "dot-red-glow" : "dot-off")" id="io-status-@i-0"></span>
+                        </div>
+                    </td>
+                    <td id="cell-status-@i-1" class="io-cell col-status @(s1On ? "cell-yellow-active" : "")" data-active="@(s1On ? "true" : "false")" title="@FxIoMap.GetDescription(i, 1, FxIoBlock.Status) - Máy @i - Đèn Vàng (CHỜ)">
+                        <div class="io-grid-cell">
+                            <span class="io-cell-address">@addrS1</span>
+                            <span class="io-dot @(s1On ? "dot-yellow-glow" : "dot-off")" id="io-status-@i-1"></span>
+                        </div>
+                    </td>
+                    <td id="cell-status-@i-2" class="io-cell col-status @(s2On ? "cell-green-active" : "")" data-active="@(s2On ? "true" : "false")" title="@FxIoMap.GetDescription(i, 2, FxIoBlock.Status) - Máy @i - Đèn Xanh (CHẠY)">
+                        <div class="io-grid-cell">
+                            <span class="io-cell-address">@addrS2</span>
+                            <span class="io-dot @(s2On ? "dot-green-glow" : "dot-off")" id="io-status-@i-2"></span>
+                        </div>
+                    </td>
+                    
+                    <!-- Error block cells (X120~) -->
+                    <td id="cell-error-@i-0" class="io-cell col-error @(e0On ? "cell-red-active" : "")" data-active="@(e0On ? "true" : "false")" title="@FxIoMap.GetDescription(i, 0, FxIoBlock.Error) - Máy @i - @ErrorNames.Full(ErrorType.Out)">
+                        <div class="io-grid-cell">
+                            <span class="io-cell-address">@addrE0</span>
+                            <span class="io-dot @(e0On ? "dot-red-glow" : "dot-off")" id="io-error-@i-0"></span>
+                        </div>
+                    </td>
+                    <td id="cell-error-@i-1" class="io-cell col-error @(e1On ? "cell-yellow-active" : "")" data-active="@(e1On ? "true" : "false")" title="@FxIoMap.GetDescription(i, 1, FxIoBlock.Error) - Máy @i - @ErrorNames.Full(ErrorType.Trash)">
+                        <div class="io-grid-cell">
+                            <span class="io-cell-address">@addrE1</span>
+                            <span class="io-dot @(e1On ? "dot-yellow-glow" : "dot-off")" id="io-error-@i-1"></span>
+                        </div>
+                    </td>
+                    <td id="cell-error-@i-2" class="io-cell col-error @(e2On ? "cell-purple-active" : "")" data-active="@(e2On ? "true" : "false")" title="@FxIoMap.GetDescription(i, 2, FxIoBlock.Error) - Máy @i - @ErrorNames.Full(ErrorType.Other)">
+                        <div class="io-grid-cell">
+                            <span class="io-cell-address">@addrE2</span>
+                            <span class="io-dot @(e2On ? "dot-purple-glow" : "dot-off")" id="io-error-@i-2"></span>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@section Scripts {
+<script>
+    let currentPlcFilter = 'all';
+
+    // === SignalR Live Connection ===
+    const hubConn = window.machineConnection;
+
+    hubConn.on("InitializeStates", (states) => {
+        states.forEach(updateIoRow);
+        filterIoTable();
+    });
+
+    hubConn.on("UpdateMachineStates", (states) => {
+        states.forEach(m => {
+            updateIoRow(m);
+        });
+        filterIoTable();
+    });
+
+    function flashCell(cell) {
+        if (!cell) return;
+        cell.classList.add('cell-flash');
+        setTimeout(() => cell.classList.remove('cell-flash'), 800);
+    }
+
+    function setCellState(dotElement, isOn, glowClass, activeCellClass) {
+        const cell = dotElement.closest('td');
+        if (!cell) return;
+        
+        const wasActive = cell.getAttribute('data-active') === 'true';
+        if (wasActive !== isOn) {
+            dotElement.className = `io-dot ${isOn ? glowClass : 'dot-off'}`;
+            cell.className = `io-cell ${cell.classList.contains('col-status') ? 'col-status' : 'col-error'} ${isOn ? activeCellClass : ''}`;
+            cell.setAttribute('data-active', isOn ? 'true' : 'false');
+            flashCell(cell);
+        }
+    }
+
+    function updateIoRow(m) {
+        // m fields: machineId, status (Green, Yellow, Red, Off), outSignal, trashSignal, otherSignal (raw inputs)
+        
+        // Status block (X000~)
+        const redDot = document.getElementById(`io-status-${m.machineId}-0`);
+        const yelDot = document.getElementById(`io-status-${m.machineId}-1`);
+        const grnDot = document.getElementById(`io-status-${m.machineId}-2`);
+
+        if (redDot) setCellState(redDot, m.status === 'Red', 'dot-red-glow', 'cell-red-active');
+        if (yelDot) setCellState(yelDot, m.status === 'Yellow', 'dot-yellow-glow', 'cell-yellow-active');
+        if (grnDot) setCellState(grnDot, m.status === 'Green', 'dot-green-glow', 'cell-green-active');
+
+        // Error block (X120~)
+        const outDot = document.getElementById(`io-error-${m.machineId}-0`);
+        const trashDot = document.getElementById(`io-error-${m.machineId}-1`);
+        const otherDot = document.getElementById(`io-error-${m.machineId}-2`);
+
+        if (outDot) setCellState(outDot, m.outSignal, 'dot-red-glow', 'cell-red-active');
+        if (trashDot) setCellState(trashDot, m.trashSignal, 'dot-yellow-glow', 'cell-yellow-active');
+        if (otherDot) setCellState(otherDot, m.otherSignal, 'dot-purple-glow', 'cell-purple-active');
+    }
+
+    // === Client-side Filtering & Searching ===
+    function filterPlcType(type, btn) {
+        currentPlcFilter = type;
+        
+        // Update active tab button style
+        document.querySelectorAll('.io-tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        
+        // Hide/show headers
+        const statusGroupHeader = document.querySelector('.col-group-status');
+        const errorGroupHeader = document.querySelector('.col-group-error');
+        
+        const statusHeaders = document.querySelectorAll('.col-status');
+        const errorHeaders = document.querySelectorAll('.col-error');
+        
+        if (type === 'all') {
+            if (statusGroupHeader) { statusGroupHeader.style.display = ''; statusGroupHeader.setAttribute('colspan', '3'); }
+            if (errorGroupHeader) { errorGroupHeader.style.display = ''; errorGroupHeader.setAttribute('colspan', '3'); }
+            statusHeaders.forEach(h => h.style.display = '');
+            errorHeaders.forEach(h => h.style.display = '');
+        } else if (type === 'status') {
+            if (statusGroupHeader) { statusGroupHeader.style.display = ''; statusGroupHeader.setAttribute('colspan', '3'); }
+            if (errorGroupHeader) { errorGroupHeader.style.display = 'none'; }
+            statusHeaders.forEach(h => h.style.display = '');
+            errorHeaders.forEach(h => h.style.display = 'none');
+        } else if (type === 'error') {
+            if (statusGroupHeader) { statusGroupHeader.style.display = 'none'; }
+            if (errorGroupHeader) { errorGroupHeader.style.display = ''; errorGroupHeader.setAttribute('colspan', '3'); }
+            statusHeaders.forEach(h => h.style.display = 'none');
+            errorHeaders.forEach(h => h.style.display = '');
+        }
+        
+        filterIoTable();
+    }
+
+    function filterIoTable() {
+        const query = document.getElementById('ioSearchInput').value.toLowerCase().trim();
+        const stationFilter = document.getElementById('ioStationFilter').value;
+        const stateFilter = document.getElementById('ioStateFilter').value;
+        
+        const rows = document.querySelectorAll('#ioTable tbody tr');
+        let visibleCount = 0;
+        
+        rows.forEach(row => {
+            const station = row.getAttribute('data-station');
+            
+            // First show/hide cells based on currentPlcFilter
+            const statusCells = row.querySelectorAll('.col-status');
+            const errorCells = row.querySelectorAll('.col-error');
+            
+            if (currentPlcFilter === 'all') {
+                statusCells.forEach(c => c.style.display = '');
+                errorCells.forEach(c => c.style.display = '');
+            } else if (currentPlcFilter === 'status') {
+                statusCells.forEach(c => c.style.display = '');
+                errorCells.forEach(c => c.style.display = 'none');
+            } else if (currentPlcFilter === 'error') {
+                statusCells.forEach(c => c.style.display = 'none');
+                errorCells.forEach(c => c.style.display = '');
+            }
+            
+            // Get active status of visible cells in this row
+            const visibleCells = row.querySelectorAll('td.io-cell:not([style*="display: none"])');
+            let hasAnyOn = false;
+            visibleCells.forEach(c => {
+                if (c.getAttribute('data-active') === 'true') {
+                    hasAnyOn = true;
+                }
+            });
+            
+            // Check Station Filter
+            const matchesStation = (stationFilter === 'all' || stationFilter === station);
+            
+            // Check State Filter (ON / OFF)
+            const matchesState = (stateFilter === 'all' || 
+                                 (stateFilter === 'on' && hasAnyOn) || 
+                                 (stateFilter === 'off' && !hasAnyOn));
+            
+            // Check Search Query
+            const machineName = row.querySelector('td:first-child').textContent.toLowerCase();
+            let matchesAddressOrLabel = false;
+            
+            // Check cell values
+            const cellsText = [];
+            visibleCells.forEach(c => {
+                const addr = c.querySelector('.io-cell-address').textContent.toLowerCase();
+                const label = c.getAttribute('title').toLowerCase();
+                cellsText.push(addr, label);
+            });
+            
+            const matchesSearch = (!query || 
+                                   machineName.includes(query) || 
+                                   cellsText.some(t => t.includes(query)));
+                                   
+            if (matchesStation && matchesState && matchesSearch) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+        
+        // Remove empty message if exists, then add if table is empty
+        const oldEmpty = document.getElementById('ioEmptyRow');
+        if (oldEmpty) oldEmpty.remove();
+        
+        if (visibleCount === 0) {
+            const tbody = document.querySelector('#ioTable tbody');
+            const emptyRow = document.createElement('tr');
+            emptyRow.id = 'ioEmptyRow';
+            emptyRow.innerHTML = `<td colspan="7" class="empty-row">🔍 Không tìm thấy tín hiệu I/O nào phù hợp với bộ lọc</td>`;
+            tbody.appendChild(emptyRow);
+        }
+    }
+</script>
+}

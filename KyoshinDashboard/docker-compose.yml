@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  kyoshin-dashboard:
+    build:
+      context: ./KyoshinDashboard
+      dockerfile: Dockerfile
+    container_name: kyoshin-dashboard
+    restart: always
+    ports:
+      - "5000:8080"
+    env_file:
+      - ./KyoshinDashboard/.env
+    volumes:
+      # Persist SQLite database
+      - kyoshin_data:/app/data
+    # Uncomment below when using real PLC (PlcSettings__UseMock=false)
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
+    # group_add:
+    #   - dialout
+
+volumes:
+  kyoshin_data:

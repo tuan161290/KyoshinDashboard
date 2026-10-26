@@ -1,0 +1,22 @@
+# The repo is KyoshinDashboard + Kyoshin.Plc only. The rest of this folder (old apps, HieuDashBoard,
+# documents, images) is not part of it.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/.github/
+!/KyoshinDashboard/
+!/Kyoshin.Plc/
+
+# Build output, IDE
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+
+# Runtime data and local environment: never commit factory data
+*.db
+*.db-shm
+*.db-wal
+.env

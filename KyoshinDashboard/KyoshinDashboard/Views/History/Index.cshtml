@@ -1,0 +1,578 @@
+@{
+    ViewData["Title"] = "Lịch sử máy";
+}
+
+<div class="page-header">
+    <h1>📋 Lịch sử trạng thái máy</h1>
+    <div class="filter-controls">
+        <label>Máy:
+            <select id="histMachineId" onchange="loadHistory()">
+                @for (int i = 1; i <= MachineMonitorService.TOTAL_MACHINES; i++)
+                {
+                    <option value="@i" selected="@(ViewBag.MachineId == i)">M@(i)</option>
+                }
+            </select>
+        </label>
+        <label>Ngày: <input type="date" id="histDate" value="@ViewBag.Date" onchange="loadHistory()" /></label>
+    </div>
+</div>
+
+<div class="history-content">
+    <!-- Charts stack (same style as dashboard) -->
+    <div class="charts-stack">
+        <div class="chart-container-sm chart-status-lg">
+            <h3>
+                <svg class="w11-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="2" y="2" width="20" height="20" rx="4.5" fill="url(#w11-h-status-bg)" opacity="0.08"/>
+                    <rect x="2.5" y="2.5" width="19" height="19" rx="4" stroke="url(#w11-h-status-border)" stroke-width="1" opacity="0.15"/>
+                    <rect x="6" y="11" width="3.5" height="7" rx="1.75" fill="url(#w11-h-status-bar1)"/>
+                    <rect x="11" y="6" width="3.5" height="12" rx="1.75" fill="url(#w11-h-status-bar2)"/>
+                    <rect x="16" y="9" width="3.5" height="9" rx="1.75" fill="url(#w11-h-status-bar3)"/>
+                    <defs>
+                        <linearGradient id="w11-h-status-bg" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#60CDFF"/>
+                            <stop offset="100%" stop-color="#0078D4"/>
+                        </linearGradient>
+                        <linearGradient id="w11-h-status-border" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#ffffff"/>
+                            <stop offset="100%" stop-color="#0078D4"/>
+                        </linearGradient>
+                        <linearGradient id="w11-h-status-bar1" x1="6" y1="11" x2="9.5" y2="18" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#9AD3FF"/>
+                            <stop offset="100%" stop-color="#0078D4"/>
+                        </linearGradient>
+                        <linearGradient id="w11-h-status-bar2" x1="11" y1="6" x2="14.5" y2="18" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#60CDFF"/>
+                            <stop offset="100%" stop-color="#005A9E"/>
+                        </linearGradient>
+                        <linearGradient id="w11-h-status-bar3" x1="16" y1="9" x2="19.5" y2="18" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#2899FF"/>
+                            <stop offset="100%" stop-color="#004578"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span>Trạng thái hoạt động</span>
+            </h3>
+            <div class="chart-canvas-wrapper">
+                <canvas id="historyStatusChart"></canvas>
+            </div>
+        </div>
+        <div class="chart-container-sm chart-error-sm">
+            <h3 id="labelOut">
+                <span class="chart-dot dot-out"></span>
+                <span>@ErrorNames.Full(ErrorType.Out)</span>
+            </h3>
+            <div class="chart-canvas-wrapper">
+                <canvas id="histOutChart"></canvas>
+            </div>
+        </div>
+        <div class="chart-container-sm chart-error-sm">
+            <h3 id="labelTrash">
+                <span class="chart-dot dot-trash"></span>
+                <span>@ErrorNames.Full(ErrorType.Trash)</span>
+            </h3>
+            <div class="chart-canvas-wrapper">
+                <canvas id="histTrashChart"></canvas>
+            </div>
+        </div>
+        <div class="chart-container-sm chart-error-sm">
+            <h3 id="labelOther">
+                <span class="chart-dot dot-other"></span>
+                <span>@ErrorNames.Full(ErrorType.Other)</span>
+            </h3>
+            <div class="chart-canvas-wrapper">
+                <canvas id="histOtherChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shift Statistics Summary -->
+    <div class="history-table-wrapper">
+        <table class="data-table" id="shiftStatsTable">
+            <thead>
+                <tr>
+                    <th>Ca</th>
+                    <th>Thời gian</th>
+                    <th style="color:#2DA44E">% Chạy</th>
+                    <th style="color:#D4990A">% Chờ</th>
+                    <th style="color:#CF222E">% Dừng</th>
+                    <th style="color:#8B95A5">Tắt (phút)</th>
+                    <th style="color:#F85149" title="@ErrorNames.Full(ErrorType.Out)">% @ErrorNames.Short(ErrorType.Out)</th>
+                    <th style="color:#E3883E" title="@ErrorNames.Full(ErrorType.Trash)">% @ErrorNames.Short(ErrorType.Trash)</th>
+                    <th style="color:#A371F7" title="@ErrorNames.Full(ErrorType.Other)">% @ErrorNames.Short(ErrorType.Other)</th>
+                </tr>
+            </thead>
+            <tbody id="shiftStatsBody">
+                <tr><td colspan="9" class="empty-row">Đang tải dữ liệu...</td></tr>
+            </tbody>
+        </table>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:6px">% tính trên thời gian có đèn (Chạy + Chờ + Dừng), không tính thời gian Tắt máy.</div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // Chart color constants for light theme
+    const C = {
+        green: '#3FB950', greenFill: 'rgba(63, 185, 80, 0.15)',
+        yellow: '#D4990A', yellowFill: 'rgba(212, 153, 10, 0.15)',
+        red: '#F85149', redFill: 'rgba(248, 81, 73, 0.15)',
+        gray: '#8B949E', grayFill: 'rgba(139, 148, 158, 0.10)',
+        out: '#F85149', trash: '#E3883E', other: '#A371F7',
+        grid: 'rgba(0, 0, 0, 0.05)', text: '#656D76'
+    };
+
+    // Disable animations globally
+    Chart.defaults.animation = false;
+    Chart.defaults.transitions.active.animation.duration = 0;
+
+    let histStatusChart;
+    const errorCharts = {}; // canvas id → Chart
+
+    // Same y-axis width on every chart so the time axes line up vertically
+    const Y_AXIS_WIDTH = 48;
+    const fixYAxisWidth = scale => { scale.width = Y_AXIS_WIDTH; };
+
+    function allCharts() {
+        return [histStatusChart, ...Object.values(errorCharts)].filter(Boolean);
+    }
+
+    // Zoom/pan on one chart → the same time range on all charts
+    function syncTimeRange({ chart }) {
+        const { min, max } = chart.scales.x;
+        allCharts().forEach(c => { if (c !== chart) c.zoomScale('x', { min, max }, 'none'); });
+    }
+
+    // Double-click any chart → whole day (06:00 – 06:00) on all charts
+    function resetTimeRange() {
+        allCharts().forEach(c => c.resetZoom('none'));
+    }
+
+    function zoomOptions(range) {
+        return {
+            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoom: syncTimeRange },
+            pan: { enabled: true, mode: 'x', onPan: syncTimeRange },
+            limits: { x: { min: range.start.getTime(), max: range.end.getTime() } }
+        };
+    }
+
+    // Local midnight of the picked date (new Date("yyyy-mm-dd") would be UTC midnight)
+    function pickedDate() {
+        const dateStr = document.getElementById('histDate').value;
+        if (!dateStr) { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
+        const [y, m, d] = dateStr.split('-').map(Number);
+        return new Date(y, m - 1, d);
+    }
+
+    // Shift time range: Ca1=06:00, Ca3 end=06:00 next day
+    function getShiftRange() {
+        const d = pickedDate();
+        const start = new Date(d); start.setHours(6, 0, 0, 0);
+        const end = new Date(d); end.setDate(end.getDate() + 1); end.setHours(6, 0, 0, 0);
+        return { start, end };
+    }
+
+    // Factory local time as the API expects it: yyyy-MM-ddTHH:mm:ss (no time zone)
+    function toLocalIso(d) {
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
+
+    function formatDuration(seconds) {
+        if (!seconds || seconds <= 0) return '—';
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        if (h > 0) return `${h}h ${m}m ${s}s`;
+        if (m > 0) return `${m}m ${s}s`;
+        return `${s}s`;
+    }
+
+    async function loadHistory() {
+        const machineId = document.getElementById('histMachineId').value;
+        const range = getShiftRange();
+
+        try {
+            // Load chart data for the whole production day, 06:00 → 06:00 next day
+            const chartResp = await fetch(`/api/machineapi/chart-data?machineId=${machineId}&from=${toLocalIso(range.start)}&to=${toLocalIso(range.end)}`);
+            const chartData = await chartResp.json();
+
+            renderStatusChart(chartData.statusTimeline);
+            renderErrorTimeline('histOutChart', chartData.errorTimeline, 'outError', C.out, ERROR_NAMES.out.short);
+            renderErrorTimeline('histTrashChart', chartData.errorTimeline, 'trashError', C.trash, ERROR_NAMES.trash.short);
+            renderErrorTimeline('histOtherChart', chartData.errorTimeline, 'otherError', C.other, ERROR_NAMES.other.short);
+
+            // Calculate per-shift statistics
+            renderShiftStats(chartData.statusTimeline, chartData.errorTimeline);
+        } catch (e) {
+            console.error('Failed to load history:', e);
+        }
+    }
+
+    function renderShiftStats(statusTimeline, errorTimeline) {
+        const tbody = document.getElementById('shiftStatsBody');
+        const baseDate = pickedDate();
+
+        // Shift boundaries
+        const shifts = [
+            { name: 'Ca 1', startH: 6, endH: 14, label: '06:00 – 14:00' },
+            { name: 'Ca 2', startH: 14, endH: 22, label: '14:00 – 22:00' },
+            { name: 'Ca 3', startH: 22, endH: 30, label: '22:00 – 06:00' }  // 30 = next day 06:00
+        ];
+
+        const SHIFT_SEC = 8 * 3600; // 8 hours per shift
+        const TOTAL_SEC = 24 * 3600;
+
+        // For each shift, accumulate seconds per status and per error
+        const results = shifts.map(shift => {
+            const shiftStart = new Date(baseDate);
+            shiftStart.setHours(shift.startH % 24, 0, 0, 0);
+            if (shift.startH >= 24) shiftStart.setDate(shiftStart.getDate() + 1);
+
+            const shiftEnd = new Date(baseDate);
+            shiftEnd.setHours(shift.endH % 24, 0, 0, 0);
+            if (shift.endH >= 24) shiftEnd.setDate(shiftEnd.getDate() + 1);
+
+            let green = 0, yellow = 0, red = 0, off = 0;
+            let outSec = 0, trashSec = 0, otherSec = 0;
+
+            // Status durations
+            statusTimeline.forEach(t => {
+                const segStart = new Date(t.start);
+                const segEnd = new Date(t.end);
+                const overlap = getOverlap(segStart, segEnd, shiftStart, shiftEnd);
+                if (overlap <= 0) return;
+
+                if (t.status === 'Green') green += overlap;
+                else if (t.status === 'Yellow') yellow += overlap;
+                else if (t.status === 'Red') red += overlap;
+                else if (t.status === 'Off') off += overlap;
+            });
+
+            // Error durations
+            errorTimeline.forEach(t => {
+                const segStart = new Date(t.start);
+                const segEnd = new Date(t.end);
+                const overlap = getOverlap(segStart, segEnd, shiftStart, shiftEnd);
+                if (overlap <= 0) return;
+
+                if (t.outError) outSec += overlap;
+                if (t.trashError) trashSec += overlap;
+                if (t.otherError) otherSec += overlap;
+            });
+
+            const total = green + yellow + red + off;
+            return {
+                name: shift.name, label: shift.label,
+                green, yellow, red, off, total,
+                outSec, trashSec, otherSec,
+                shiftSec: SHIFT_SEC
+            };
+        });
+
+        // Total row
+        const totals = {
+            name: '<strong>Tổng</strong>', label: '06:00 – 06:00',
+            green: results.reduce((s, r) => s + r.green, 0),
+            yellow: results.reduce((s, r) => s + r.yellow, 0),
+            red: results.reduce((s, r) => s + r.red, 0),
+            off: results.reduce((s, r) => s + r.off, 0),
+            total: results.reduce((s, r) => s + r.total, 0),
+            outSec: results.reduce((s, r) => s + r.outSec, 0),
+            trashSec: results.reduce((s, r) => s + r.trashSec, 0),
+            otherSec: results.reduce((s, r) => s + r.otherSec, 0),
+            shiftSec: TOTAL_SEC
+        };
+
+        const allRows = [...results, totals];
+
+        function pct(val, base) {
+            if (base <= 0) return '—';
+            return (val / base * 100).toFixed(1) + '%';
+        }
+
+        function pctCell(val, base, color) {
+            const p = base > 0 ? (val / base * 100) : 0;
+            return `<td style="text-align:center; color:${p > 0 ? color : 'inherit'}; font-weight:${p > 0 ? '600' : '400'}">${pct(val, base)}</td>`;
+        }
+
+        tbody.innerHTML = allRows.map((r, i) => {
+            const isTotal = i === allRows.length - 1;
+            const rowStyle = isTotal ? 'style="border-top:2px solid var(--border-strong); font-weight:600"' : '';
+            // Same base as the Report page (Models/ProductionRate.cs): lamp-on time, power-off not included
+            const base = r.green + r.yellow + r.red;
+            return `<tr ${rowStyle}>
+                <td>${r.name}</td>
+                <td style="color:var(--text-muted); font-size:11px">${r.label}</td>
+                ${pctCell(r.green, base, C.green)}
+                ${pctCell(r.yellow, base, C.yellow)}
+                ${pctCell(r.red, base, C.red)}
+                <td style="text-align:center; color:${r.off > 0 ? C.gray : 'inherit'}">${Math.round(r.off / 60)}</td>
+                ${pctCell(r.outSec, base, C.out)}
+                ${pctCell(r.trashSec, base, C.trash)}
+                ${pctCell(r.otherSec, base, C.other)}
+            </tr>`;
+        }).join('');
+
+        // Update error chart headings with total %
+        const TOTAL = TOTAL_SEC;
+        const outPct = TOTAL > 0 ? (totals.outSec / TOTAL * 100).toFixed(1) : '0.0';
+        const trashPct = TOTAL > 0 ? (totals.trashSec / TOTAL * 100).toFixed(1) : '0.0';
+        const otherPct = TOTAL > 0 ? (totals.otherSec / TOTAL * 100).toFixed(1) : '0.0';
+        document.getElementById('labelOut').innerHTML = `🔴 ${ERROR_NAMES.out.full} — <span style="color:${C.out}">${outPct}%</span>`;
+        document.getElementById('labelTrash').innerHTML = `🟠 ${ERROR_NAMES.trash.full} — <span style="color:${C.trash}">${trashPct}%</span>`;
+        document.getElementById('labelOther').innerHTML = `🟣 ${ERROR_NAMES.other.full} — <span style="color:${C.other}">${otherPct}%</span>`;
+    }
+
+    // Get overlap in seconds between two time ranges
+    function getOverlap(s1, e1, s2, e2) {
+        const start = Math.max(s1.getTime(), s2.getTime());
+        const end = Math.min(e1.getTime(), e2.getTime());
+        return Math.max(0, (end - start) / 1000);
+    }
+
+    // === Status chart ===
+    function renderStatusChart(timeline) {
+        const ctx = document.getElementById('historyStatusChart').getContext('2d');
+        if (histStatusChart) histStatusChart.destroy();
+
+        const statusY = { 'Green': 3, 'Yellow': 2, 'Red': 1, 'Off': 0 };
+        const statusKey = { 'Green': 0, 'Yellow': 1, 'Red': 2, 'Off': 3 };
+
+        const datasets = [[], [], [], []];
+        const lastEndTime = [null, null, null, null];
+
+        // Calculate total seconds per status for legend percentages
+        let greenSec = 0, yellowSec = 0, redSec = 0, offSec = 0;
+        const TOTAL_SEC = 24 * 3600;
+
+        timeline.forEach(t => {
+            const idx = statusKey[t.status];
+            if (idx === undefined) return;
+            const yVal = statusY[t.status];
+            const startDate = new Date(t.start);
+            const endDate = new Date(t.end);
+
+            // Accumulate duration
+            const dur = (endDate - startDate) / 1000;
+            if (t.status === 'Green') greenSec += dur;
+            else if (t.status === 'Yellow') yellowSec += dur;
+            else if (t.status === 'Red') redSec += dur;
+            else if (t.status === 'Off') offSec += dur;
+
+            if (lastEndTime[idx] !== null && lastEndTime[idx] < startDate) {
+                datasets[idx].push({ x: lastEndTime[idx], y: NaN });
+            }
+
+            datasets[idx].push({ x: startDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
+            datasets[idx].push({ x: endDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
+            lastEndTime[idx] = endDate;
+        });
+
+        // Build percentage labels
+        const pctValues = [
+            (greenSec / TOTAL_SEC * 100).toFixed(1),
+            (yellowSec / TOTAL_SEC * 100).toFixed(1),
+            (redSec / TOTAL_SEC * 100).toFixed(1),
+            (offSec / TOTAL_SEC * 100).toFixed(1)
+        ];
+
+        const makeDs = (label, data, color, fillColor) => ({
+            label, data,
+            borderColor: color,
+            backgroundColor: fillColor,
+            fill: true,
+            stepped: true,
+            spanGaps: false,
+            pointRadius: 0,
+            borderWidth: 2
+        });
+
+        const shiftRange = getShiftRange();
+
+        histStatusChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [
+                    makeDs('Chạy',  datasets[0], C.green, C.greenFill),
+                    makeDs('Chờ',   datasets[1], C.yellow, C.yellowFill),
+                    makeDs('Dừng',  datasets[2], C.red, C.redFill),
+                    makeDs('Tắt',   datasets[3], C.gray, C.grayFill)
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+                plugins: {
+                    legend: {
+                        display: true, position: 'top',
+                        labels: {
+                            color: C.text, boxWidth: 12, font: { size: 10 }, padding: 8,
+                            generateLabels: (chart) => {
+                                return chart.data.datasets.map((ds, i) => ({
+                                    text: `${ds.label} ${pctValues[i]}%`,
+                                    fontColor: ds.borderColor,
+                                    fillStyle: ds.backgroundColor,
+                                    strokeStyle: ds.borderColor,
+                                    lineWidth: 2,
+                                    hidden: !chart.isDatasetVisible(i),
+                                    datasetIndex: i
+                                }));
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => {
+                                const raw = items[0]?.raw;
+                                if (!raw?.segStart) return '';
+                                const fmt = d => d.toLocaleTimeString('vi-VN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+                                return fmt(raw.segStart) + ' → ' + fmt(raw.segEnd);
+                            },
+                            label: (ctx) => {
+                                const raw = ctx.raw;
+                                const names = { 'Green': 'CHẠY', 'Yellow': 'CHỜ', 'Red': 'DỪNG', 'Off': 'TẮT' };
+                                const name = names[raw?.segStatus] || ctx.dataset.label;
+                                if (!raw?.segStart) return name;
+                                const dur = Math.round((raw.segEnd - raw.segStart) / 1000);
+                                const m = Math.floor(dur / 60), s = dur % 60;
+                                return name + ' — ' + (m > 0 ? m + 'p ' : '') + s + 's';
+                            }
+                        }
+                    },
+                    zoom: zoomOptions(shiftRange)
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        min: shiftRange.start,
+                        max: shiftRange.end,
+                        time: { unit: 'hour', displayFormats: { hour: 'HH:mm', minute: 'HH:mm' }, tooltipFormat: 'HH:mm:ss' },
+                        ticks: { color: C.text, font: { size: 10 } },
+                        grid: { color: C.grid }
+                    },
+                    y: {
+                        min: -0.3, max: 3.5,
+                        afterFit: fixYAxisWidth,
+                        ticks: {
+                            color: C.text, stepSize: 1, font: { size: 10 },
+                            callback: v => { if (v >= 0 && v <= 3) return ['Tắt', 'Dừng', 'Chờ', 'Chạy'][v]; return ''; }
+                        },
+                        grid: { color: C.grid }
+                    }
+                }
+            }
+        });
+    }
+
+    // === Error timeline chart ===
+    function renderErrorTimeline(canvasId, errorTimeline, errorKey, color, label) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        if (errorCharts[canvasId]) errorCharts[canvasId].destroy();
+
+        const shiftRange = getShiftRange();
+
+        // Build {x, y} point data from segments
+        const points = [];
+        let lastEndDate = null;
+
+        errorTimeline.forEach(t => {
+            const errVal = t[errorKey] ? 1 : 0;
+            if (errVal === 0) return;
+            const startDate = new Date(t.start);
+            const endDate = new Date(t.end);
+
+            if (lastEndDate !== null && startDate.getTime() - lastEndDate.getTime() > 2000) {
+                points.push({ x: new Date(lastEndDate), y: NaN });
+            }
+
+            points.push({ x: startDate, y: errVal, segStart: startDate, segEnd: endDate });
+            points.push({ x: endDate, y: errVal, segStart: startDate, segEnd: endDate });
+            lastEndDate = endDate;
+        });
+
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: label,
+                    data: points,
+                    borderColor: color,
+                    backgroundColor: color + '20',
+                    fill: { target: 1 },
+                    stepped: true,
+                    spanGaps: false,
+                    pointRadius: 0,
+                    borderWidth: 2
+                }, {
+                    label: 'OFF',
+                    data: [{ x: shiftRange.start, y: 0 }, { x: shiftRange.end, y: 0 }],
+                    borderColor: color + '40',
+                    borderWidth: 1,
+                    pointRadius: 0,
+                    fill: false,
+                    borderDash: []
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        filter: (item) => item.raw.y > 0,
+                        callbacks: {
+                            title: (items) => {
+                                const raw = items[0]?.raw;
+                                if (!raw?.segStart) return '';
+                                const fmt = d => d.toLocaleTimeString('vi-VN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+                                return fmt(raw.segStart) + ' → ' + fmt(raw.segEnd);
+                            },
+                            label: (ctx) => {
+                                const raw = ctx.raw;
+                                const state = raw.y === 1 ? 'ON' : 'OFF';
+                                if (!raw?.segStart) return state;
+                                const dur = Math.round((raw.segEnd - raw.segStart) / 1000);
+                                const m = Math.floor(dur / 60), s = dur % 60;
+                                return label + ' ' + state + ' — ' + (m > 0 ? m + 'p ' : '') + s + 's';
+                            }
+                        }
+                    },
+                    zoom: zoomOptions(shiftRange)
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        min: shiftRange.start,
+                        max: shiftRange.end,
+                        time: { unit: 'hour', displayFormats: { hour: 'HH:mm', minute: 'HH:mm' }, tooltipFormat: 'HH:mm:ss' },
+                        ticks: { color: C.text, font: { size: 10 } },
+                        grid: { color: C.grid }
+                    },
+                    y: {
+                        min: -0.1, max: 1.3,
+                        afterFit: fixYAxisWidth,
+                        ticks: {
+                            color: C.text, stepSize: 1, font: { size: 10 },
+                            callback: v => v === 0 ? 'OFF' : v === 1 ? 'ON' : ''
+                        },
+                        grid: { color: C.grid }
+                    }
+                }
+            }
+        });
+
+        errorCharts[canvasId] = chart;
+    }
+
+    ['historyStatusChart', 'histOutChart', 'histTrashChart', 'histOtherChart']
+        .forEach(id => document.getElementById(id).addEventListener('dblclick', resetTimeRange));
+
+    // Initial load
+    loadHistory();
+</script>
+}

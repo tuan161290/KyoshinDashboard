@@ -1,0 +1,49 @@
+# Build the Windows package and publish it as a GitHub Release when a version tag is pushed
+# (KyoshinDashboard\release.cmd 1.2.0 does: git tag v1.2.0 + git push).
+# The factory PC installs the latest release with C:\Kyoshin\update.cmd.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Publish server and agent (win-x64, self-contained)
+        run: |
+          set -e
+          OUT=out/Kyoshin
+          dotnet publish KyoshinDashboard/KyoshinDashboard/KyoshinDashboard.csproj -c Release -r win-x64 --self-contained true -p:Version=$VERSION -o $OUT/Server
+          dotnet publish KyoshinDashboard/KyoshinAgent/KyoshinAgent.csproj -c Release -r win-x64 --self-contained true -p:Version=$VERSION -o $OUT/Agent
+          rm -f $OUT/Server/appsettings.Development.json $OUT/Agent/appsettings.Development.json
+          cp KyoshinDashboard/deploy/windows/*.cmd KyoshinDashboard/deploy/windows/*.ps1 $OUT/
+          printf '%s\r\n' "$VERSION" > $OUT/version.txt
+          test -f $OUT/Server/KyoshinDashboard.exe && test -f $OUT/Agent/KyoshinAgent.exe && test -f $OUT/update.cmd
+
+      - name: Zip
+        run: |
+          set -e
+          (cd out/Kyoshin && zip -qr ../../Kyoshin-win-x64.zip .)
+          sha256sum Kyoshin-win-x64.zip > Kyoshin-win-x64.zip.sha256
+          ls -la Kyoshin-win-x64.zip*
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" Kyoshin-win-x64.zip Kyoshin-win-x64.zip.sha256 \
+            --title "Kyoshin $VERSION" --generate-notes

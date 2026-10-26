@@ -1,0 +1,31 @@
+# ============================================================================
+#  Kyoshin Dashboard — TrueNAS SCALE Custom App
+#  Apps -> Discover Apps -> (menu) Install via YAML -> paste this file
+#
+#  Image kyoshin-dashboard is built locally on this TrueNAS from
+#  /mnt/MyCloud/Yolo/KyoshinDashboard (Dockerfile + app/), so it is never pulled.
+#  Database: /mnt/MyCloud/Yolo/KyoshinDashboard/data/Kyoshin.db
+#  Runs as TrueNAS "apps" (568:568) — the dataset's Apps ACL already grants it access.
+#
+#  Before installing: put a long random secret in Ingest__ApiKey (letters/digits only),
+#  the factory agent must use the same value (Server:ApiKey). E.g. in PowerShell:
+#      [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
+#  Router: forward TCP 30031 to this TrueNAS (port of this app on TrueNAS; 8080 is only inside the container).
+#
+#  Update: rebuild with a new tag (e.g. 1.1), change "image:" below, save -> app redeploys.
+#  Logs:   check "Server time zone: (UTC+07:00) ..." after start.
+# ============================================================================
+services:
+  kyoshin-dashboard:
+    image: kyoshin-dashboard:1.0
+    pull_policy: never
+    restart: unless-stopped
+    user: "568:568"
+    ports:
+      - "30031:8080"
+    environment:
+      Ingest__ApiKey: "DOI-THANH-KHOA-BI-MAT-CUA-BAN"
+      # Optional: only accept data from the factory's public IP, e.g. "113.161.10.20"
+      Ingest__AllowedIps: ""
+    volumes:
+      - /mnt/MyCloud/Yolo/KyoshinDashboard/data:/data

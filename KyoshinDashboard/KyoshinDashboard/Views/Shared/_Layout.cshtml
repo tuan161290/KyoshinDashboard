@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Kyoshin Dashboard</title>
+    <!-- All libraries are served locally (wwwroot/lib) so the dashboard works on an offline factory network.
+         Versions: Inter 5.3.0, chart.js 4.4.7, chartjs-adapter-date-fns 3.0.0, hammerjs 2.0.8,
+         chartjs-plugin-zoom 2.0.1, signalr 8.0.0 -->
+    <link rel="stylesheet" href="~/lib/inter/inter.css" />
+    <link rel="stylesheet" href="~/css/site.css" />
+    <script src="~/lib/chartjs/chart.umd.js"></script>
+    <script src="~/lib/chartjs-adapter-date-fns/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="~/lib/hammerjs/hammer.min.js"></script>
+    <script src="~/lib/chartjs-plugin-zoom/chartjs-plugin-zoom.min.js"></script>
+    <script src="~/lib/signalr/signalr.min.js"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <!-- ── Left Sidebar (WinUI NavigationView) ── -->
+        <nav class="sidebar">
+            <div class="sidebar-brand">
+                <span class="sidebar-logo">⚙</span>
+                <span class="sidebar-title">KYOSHIN</span>
+            </div>
+            <div class="sidebar-nav">
+                <a href="/" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Home" && ViewContext.RouteData.Values["action"]?.ToString() == "Index" ? "active" : "")">
+                    <span class="nav-item-icon">📊</span>
+                    <span class="nav-item-label">Dashboard</span>
+                </a>
+                <a href="/Home/IoMonitor" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Home" && ViewContext.RouteData.Values["action"]?.ToString() == "IoMonitor" ? "active" : "")">
+                    <span class="nav-item-icon">🔌</span>
+                    <span class="nav-item-label">Giám sát I/O</span>
+                </a>
+                <a href="/History" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "History" ? "active" : "")">
+                    <span class="nav-item-icon">📋</span>
+                    <span class="nav-item-label">Lịch sử</span>
+                </a>
+                <a href="/Statistics" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Statistics" ? "active" : "")">
+                    <span class="nav-item-icon">📈</span>
+                    <span class="nav-item-label">Thống kê ca</span>
+                </a>
+                <a href="/Report" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Report" ? "active" : "")">
+                    <span class="nav-item-icon">📑</span>
+                    <span class="nav-item-label">Báo cáo</span>
+                </a>
+            </div>
+
+            <div class="sidebar-summary-group">
+                <div class="sidebar-summary-card card-running">
+                    <span class="summary-dot"></span>
+                    <span class="summary-count" id="sidebarCountGreen">0</span>
+                    <span class="summary-label">Đang chạy</span>
+                </div>
+                <div class="sidebar-summary-card card-waiting">
+                    <span class="summary-dot"></span>
+                    <span class="summary-count" id="sidebarCountYellow">0</span>
+                    <span class="summary-label">Chờ</span>
+                </div>
+                <div class="sidebar-summary-card card-stopped">
+                    <span class="summary-dot"></span>
+                    <span class="summary-count" id="sidebarCountRed">0</span>
+                    <span class="summary-label">Dừng / Lỗi</span>
+                </div>
+                <div class="sidebar-summary-card card-off">
+                    <span class="summary-dot"></span>
+                    <span class="summary-count" id="sidebarCountOff">0</span>
+                    <span class="summary-label">Tắt nguồn</span>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-status" title="Kết nối của trình duyệt tới máy chủ dashboard">
+                    <span class="connection-dot" id="connectionDot"></span>
+                    <span id="connectionText">Máy chủ: đang kết nối...</span>
+                </div>
+                <div class="sidebar-status" title="Dữ liệu từ máy đọc PLC ở xưởng (KyoshinAgent)">
+                    <span class="connection-dot" id="agentDot"></span>
+                    <span id="agentText">Xưởng: chưa có dữ liệu</span>
+                </div>
+                <div class="sidebar-clock" id="clock"></div>
+                <div class="sidebar-date" id="dateText"></div>
+                <div class="sidebar-date" title="Cập nhật: chạy C:\Kyoshin\update.cmd trên máy chủ">Phiên bản @AppVersion.Current</div>
+            </div>
+        </nav>
+
+        <!-- ── Main Content ── -->
+        <main class="main-content">
+            @RenderBody()
+        </main>
+    </div>
+
+    <script>
+        // Clock + Date
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').textContent =
+                now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            document.getElementById('dateText').textContent =
+                now.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long' });
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // === Global SignalR Connection ===
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/machineHub")
+            .withAutomaticReconnect()
+            .build();
+        window.machineConnection = connection;
+
+        const globalMachineStates = {};
+
+        function recalculateSidebarSummary() {
+            let g = 0, y = 0, r = 0, o = 0;
+            for (const id in globalMachineStates) {
+                const status = globalMachineStates[id];
+                if (status === 'Green') g++;
+                else if (status === 'Yellow') y++;
+                else if (status === 'Red') r++;
+                else o++;
+            }
+            const cg = document.getElementById('sidebarCountGreen');
+            const cy = document.getElementById('sidebarCountYellow');
+            const cr = document.getElementById('sidebarCountRed');
+            const co = document.getElementById('sidebarCountOff');
+            if (cg) cg.textContent = g;
+            if (cy) cy.textContent = y;
+            if (cr) cr.textContent = r;
+            if (co) co.textContent = o;
+        }
+
+        connection.on("InitializeStates", (states) => {
+            states.forEach(s => {
+                globalMachineStates[s.machineId] = s.status;
+            });
+            recalculateSidebarSummary();
+        });
+
+        connection.on("UpdateMachineStates", (states) => {
+            states.forEach(s => {
+                globalMachineStates[s.machineId] = s.status;
+            });
+            recalculateSidebarSummary();
+        });
+
+        // Factory link: is KyoshinAgent sending data, and can it read the PLC?
+        connection.on("AgentStatus", (a) => {
+            const dot = document.getElementById('agentDot');
+            const text = document.getElementById('agentText');
+            if (!dot || !text) return;
+            if (!a.online) {
+                dot.className = 'connection-dot disconnected';
+                text.textContent = a.lastSeen ? `Xưởng: mất kết nối (từ ${a.lastSeen})` : 'Xưởng: chưa có dữ liệu';
+            } else if (a.mode === 'plc-offline') {
+                dot.className = 'connection-dot disconnected';
+                text.textContent = 'Xưởng: không mở được cổng COM';
+            } else if (a.mode === 'plc' && a.stationsOk < a.stationsTotal) {
+                dot.className = 'connection-dot connecting';
+                text.textContent = `Xưởng: PLC ${a.stationsOk}/${a.stationsTotal} station trả lời`;
+            } else {
+                dot.className = 'connection-dot connected';
+                text.textContent = a.mode === 'mock' ? 'Xưởng: trực tuyến (giả lập)' : 'Xưởng: trực tuyến';
+            }
+        });
+
+        connection.onreconnecting(() => {
+            const dot = document.getElementById('connectionDot');
+            const text = document.getElementById('connectionText');
+            if (dot) dot.className = 'connection-dot connecting';
+            if (text) text.textContent = 'Máy chủ: đang kết nối lại...';
+        });
+
+        connection.onreconnected(() => {
+            const dot = document.getElementById('connectionDot');
+            const text = document.getElementById('connectionText');
+            if (dot) dot.className = 'connection-dot connected';
+            if (text) text.textContent = 'Máy chủ: đã kết nối';
+        });
+
+        connection.onclose(() => {
+            const dot = document.getElementById('connectionDot');
+            const text = document.getElementById('connectionText');
+            if (dot) dot.className = 'connection-dot disconnected';
+            if (text) text.textContent = 'Máy chủ: mất kết nối';
+        });
+    </script>
+    <script>
+        // Error names (Models/ErrorNames.cs): ERROR_NAMES.out.short / .full, .trash, .other
+        const ERROR_NAMES = @Json.Serialize(ErrorNames.ForScript());
+    </script>
+    @await RenderSectionAsync("Scripts", required: false)
+    <script>
+        // Start connection after all page scripts have registered their listeners
+        window.machineConnection.start().then(() => {
+            const dot = document.getElementById('connectionDot');
+            const text = document.getElementById('connectionText');
+            if (dot) dot.className = 'connection-dot connected';
+            if (text) text.textContent = 'Máy chủ: đã kết nối';
+        }).catch(err => {
+            const dot = document.getElementById('connectionDot');
+            const text = document.getElementById('connectionText');
+            if (dot) dot.className = 'connection-dot disconnected';
+            if (text) text.textContent = 'Máy chủ: lỗi kết nối';
+            console.error(err);
+        });
+    </script>
+</body>
+</html>

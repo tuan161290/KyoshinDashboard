@@ -1,0 +1,399 @@
+@{
+    ViewData["Title"] = "Thống kê theo ca";
+}
+
+<div class="page-header">
+    <h1>📈 Thống kê hiệu suất</h1>
+    <span style="font-size:12px; color:var(--text-muted)">Hiệu suất = Chạy ÷ (Chạy + Chờ + Dừng), không tính thời gian Tắt máy</span>
+    <div class="filter-controls">
+        <label>Ngày: <input type="date" id="statDate" value="@ViewBag.Date" onchange="loadStats()" /></label>
+        <label>Ca:
+            <select id="statShift" onchange="loadStats()">
+                <option value="1" selected="@(ViewBag.Shift == 1)">Ca 1 (06:00-14:00)</option>
+                <option value="2" selected="@(ViewBag.Shift == 2)">Ca 2 (14:00-22:00)</option>
+                <option value="3" selected="@(ViewBag.Shift == 3)">Ca 3 (22:00-06:00)</option>
+            </select>
+        </label>
+        <span style="color:var(--border-strong); margin: 0 4px;">|</span>
+        <label>Khoảng thời gian:
+            <select id="statPeriod" onchange="loadPeriodStats()">
+                <option value="day">Ngày</option>
+                <option value="week">Tuần (7 ngày)</option>
+                <option value="month">Tháng (30 ngày)</option>
+            </select>
+        </label>
+    </div>
+</div>
+
+<!-- Shift Stats Section -->
+<div class="stats-content" id="shiftSection">
+    <div class="stats-charts-row">
+        <div class="chart-container">
+            <h3>Hiệu suất các máy (%)</h3>
+            <canvas id="efficiencyChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <h3>Phân bổ trạng thái tổng</h3>
+            <canvas id="statusPieChart"></canvas>
+        </div>
+    </div>
+
+    <div class="chart-container chart-wide">
+        <h3>Số lỗi theo máy</h3>
+        <canvas id="errorBarChart"></canvas>
+    </div>
+
+    <div class="history-table-wrapper">
+        <table class="data-table" id="statsTable">
+            <thead>
+                <tr>
+                    <th>Máy</th>
+                    <th>🟢 Chạy</th>
+                    <th>🟡 Chờ</th>
+                    <th>🔴 Dừng</th>
+                    <th>⬛ Tắt</th>
+                    <th>Hiệu suất</th>
+                    <th title="@ErrorNames.Full(ErrorType.Out)">@ErrorNames.Short(ErrorType.Out)</th>
+                    <th title="@ErrorNames.Full(ErrorType.Trash)">@ErrorNames.Short(ErrorType.Trash)</th>
+                    <th title="@ErrorNames.Full(ErrorType.Other)">@ErrorNames.Short(ErrorType.Other)</th>
+                </tr>
+            </thead>
+            <tbody id="statsBody">
+                <tr><td colspan="9" class="empty-row">Đang tải...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Period Trend Section (week/month) -->
+<div class="stats-content" id="periodSection" style="display:none; margin-top:20px;">
+    <div class="stats-charts-row">
+        <div class="chart-container">
+            <h3 id="trendTitle">Xu hướng hiệu suất</h3>
+            <canvas id="trendEffChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <h3>Tổng hợp trạng thái</h3>
+            <canvas id="trendStatusChart"></canvas>
+        </div>
+    </div>
+
+    <div class="chart-container chart-wide">
+        <h3>Xu hướng lỗi theo ngày</h3>
+        <canvas id="trendErrorChart"></canvas>
+    </div>
+
+    <div class="history-table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Máy</th>
+                    <th>🟢 Chạy (tổng)</th>
+                    <th>🟡 Chờ (tổng)</th>
+                    <th>🔴 Dừng (tổng)</th>
+                    <th>Hiệu suất TB</th>
+                    <th title="@ErrorNames.Full(ErrorType.Out)">@ErrorNames.Short(ErrorType.Out)</th>
+                    <th title="@ErrorNames.Full(ErrorType.Trash)">@ErrorNames.Short(ErrorType.Trash)</th>
+                    <th title="@ErrorNames.Full(ErrorType.Other)">@ErrorNames.Short(ErrorType.Other)</th>
+                </tr>
+            </thead>
+            <tbody id="periodBody">
+                <tr><td colspan="8" class="empty-row">Đang tải...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // Chart color constants for light theme
+    const C = {
+        green: '#3FB950', greenFill: 'rgba(63, 185, 80, 0.55)',
+        yellow: '#D4990A', yellowFill: 'rgba(212, 153, 10, 0.55)',
+        red: '#F85149', redFill: 'rgba(248, 81, 73, 0.55)',
+        gray: '#8B949E', grayFill: 'rgba(139, 148, 158, 0.40)',
+        out: '#F85149', outFill: 'rgba(248, 81, 73, 0.55)',
+        trash: '#E3883E', trashFill: 'rgba(227, 136, 62, 0.55)',
+        other: '#A371F7', otherFill: 'rgba(163, 113, 247, 0.55)',
+        accent: '#0078D4', accentFill: 'rgba(0, 120, 212, 0.12)',
+        grid: 'rgba(0, 0, 0, 0.05)', text: '#656D76'
+    };
+
+    let effChart, pieChart, errChart;
+    let trendEffC, trendStatusC, trendErrC;
+
+    // ===== Shift Stats =====
+    async function loadStats() {
+        const date = document.getElementById('statDate').value;
+        const shift = document.getElementById('statShift').value;
+
+        try {
+            const resp = await fetch(`/api/machineapi/shift-stats?date=${date}&shift=${shift}`);
+            const stats = await resp.json();
+            renderStatsTable(stats);
+            renderEfficiencyChart(stats);
+            renderStatusPie(stats);
+            renderErrorBarChart(stats);
+        } catch (e) {
+            console.error('Failed to load stats:', e);
+        }
+    }
+
+    function fmtTime(seconds) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        if (h > 0) return `${h}h ${m}m`;
+        return `${m}m`;
+    }
+
+    function renderStatsTable(stats) {
+        const tbody = document.getElementById('statsBody');
+        tbody.innerHTML = stats.map(s => `
+            <tr>
+                <td><strong>${s.name}</strong></td>
+                <td>${fmtTime(s.greenSec)}</td>
+                <td>${fmtTime(s.yellowSec)}</td>
+                <td>${fmtTime(s.redSec)}</td>
+                <td>${fmtTime(s.offSec)}</td>
+                <td>
+                    <div class="efficiency-bar">
+                        <div class="efficiency-fill" style="width:${s.efficiency}%"></div>
+                        <span>${s.efficiency}%</span>
+                    </div>
+                </td>
+                <td>${s.outCount}</td>
+                <td>${s.trashCount}</td>
+                <td>${s.otherCount}</td>
+            </tr>
+        `).join('');
+    }
+
+    function renderEfficiencyChart(stats) {
+        const ctx = document.getElementById('efficiencyChart').getContext('2d');
+        if (effChart) effChart.destroy();
+
+        effChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: stats.map(s => s.name),
+                datasets: [{
+                    label: 'Hiệu suất (%)',
+                    data: stats.map(s => s.efficiency),
+                    backgroundColor: stats.map(s =>
+                        s.efficiency >= 80 ? C.greenFill :
+                        s.efficiency >= 50 ? C.yellowFill : C.redFill),
+                    borderColor: stats.map(s =>
+                        s.efficiency >= 80 ? C.green :
+                        s.efficiency >= 50 ? C.yellow : C.red),
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: C.text }, grid: { color: C.grid } },
+                    y: { max: 100, ticks: { color: C.text }, grid: { color: C.grid } }
+                }
+            }
+        });
+    }
+
+    function renderStatusPie(stats) {
+        const ctx = document.getElementById('statusPieChart').getContext('2d');
+        if (pieChart) pieChart.destroy();
+
+        const totalGreen = stats.reduce((a, s) => a + s.greenSec, 0);
+        const totalYellow = stats.reduce((a, s) => a + s.yellowSec, 0);
+        const totalRed = stats.reduce((a, s) => a + s.redSec, 0);
+        const totalOff = stats.reduce((a, s) => a + s.offSec, 0);
+
+        pieChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Chạy', 'Chờ', 'Dừng', 'Tắt'],
+                datasets: [{
+                    data: [totalGreen, totalYellow, totalRed, totalOff],
+                    backgroundColor: [C.green, C.yellow, C.red, C.gray],
+                    borderWidth: 2,
+                    borderColor: '#FFFFFF'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: C.text, padding: 12 } }
+                }
+            }
+        });
+    }
+
+    function renderErrorBarChart(stats) {
+        const ctx = document.getElementById('errorBarChart').getContext('2d');
+        if (errChart) errChart.destroy();
+
+        errChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: stats.map(s => s.name),
+                datasets: [
+                    { label: ERROR_NAMES.out.short, data: stats.map(s => s.outCount), backgroundColor: C.outFill, borderColor: C.out, borderWidth: 1 },
+                    { label: ERROR_NAMES.trash.short, data: stats.map(s => s.trashCount), backgroundColor: C.trashFill, borderColor: C.trash, borderWidth: 1 },
+                    { label: ERROR_NAMES.other.short, data: stats.map(s => s.otherCount), backgroundColor: C.otherFill, borderColor: C.other, borderWidth: 1 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: C.text } } },
+                scales: {
+                    x: { ticks: { color: C.text }, grid: { color: C.grid } },
+                    y: { beginAtZero: true, ticks: { color: C.text, stepSize: 1 }, grid: { color: C.grid } }
+                }
+            }
+        });
+    }
+
+    // ===== Period Stats (day/week/month) =====
+    async function loadPeriodStats() {
+        const period = document.getElementById('statPeriod').value;
+        const date = document.getElementById('statDate').value;
+
+        if (period === 'day') {
+            document.getElementById('shiftSection').style.display = 'block';
+            document.getElementById('periodSection').style.display = 'none';
+            loadStats();
+            return;
+        }
+
+        document.getElementById('shiftSection').style.display = 'none';
+        document.getElementById('periodSection').style.display = 'block';
+
+        try {
+            const resp = await fetch(`/api/machineapi/period-stats?period=${period}&date=${date}`);
+            const data = await resp.json();
+
+            const periodLabel = period === 'week' ? '7 ngày' : '30 ngày';
+            document.getElementById('trendTitle').textContent = `Xu hướng hiệu suất (${periodLabel}: ${data.startDate} → ${data.endDate})`;
+
+            renderTrendEfficiency(data.dailyTrend);
+            renderTrendStatus(data.dailyTrend);
+            renderTrendErrors(data.dailyTrend);
+            renderPeriodTable(data.machineSummary);
+        } catch (e) {
+            console.error('Failed to load period stats:', e);
+        }
+    }
+
+    function renderTrendEfficiency(trend) {
+        const ctx = document.getElementById('trendEffChart').getContext('2d');
+        if (trendEffC) trendEffC.destroy();
+
+        trendEffC = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: trend.map(t => t.date),
+                datasets: [{
+                    label: 'Hiệu suất TB (%)',
+                    data: trend.map(t => t.efficiency),
+                    borderColor: C.accent,
+                    backgroundColor: C.accentFill,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    pointBackgroundColor: C.accent
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: C.text } } },
+                scales: {
+                    x: { ticks: { color: C.text }, grid: { color: C.grid } },
+                    y: { max: 100, ticks: { color: C.text }, grid: { color: C.grid } }
+                }
+            }
+        });
+    }
+
+    function renderTrendStatus(trend) {
+        const ctx = document.getElementById('trendStatusChart').getContext('2d');
+        if (trendStatusC) trendStatusC.destroy();
+
+        trendStatusC = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: trend.map(t => t.date),
+                datasets: [
+                    { label: 'Chạy', data: trend.map(t => t.greenSec / 3600), backgroundColor: C.greenFill, borderColor: C.green, borderWidth: 1 },
+                    { label: 'Chờ', data: trend.map(t => t.yellowSec / 3600), backgroundColor: C.yellowFill, borderColor: C.yellow, borderWidth: 1 },
+                    { label: 'Dừng', data: trend.map(t => t.redSec / 3600), backgroundColor: C.redFill, borderColor: C.red, borderWidth: 1 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: C.text } } },
+                scales: {
+                    x: { stacked: true, ticks: { color: C.text }, grid: { color: C.grid } },
+                    y: { stacked: true, ticks: { color: C.text }, grid: { color: C.grid },
+                         title: { display: true, text: 'Giờ', color: C.text } }
+                }
+            }
+        });
+    }
+
+    function renderTrendErrors(trend) {
+        const ctx = document.getElementById('trendErrorChart').getContext('2d');
+        if (trendErrC) trendErrC.destroy();
+
+        trendErrC = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: trend.map(t => t.date),
+                datasets: [
+                    { label: ERROR_NAMES.out.short, data: trend.map(t => t.outErrors), borderColor: C.out, backgroundColor: 'rgba(248,81,73,0.08)', fill: true, tension: 0.3, pointRadius: 3 },
+                    { label: ERROR_NAMES.trash.short, data: trend.map(t => t.trashErrors), borderColor: C.trash, backgroundColor: 'rgba(227,136,62,0.08)', fill: true, tension: 0.3, pointRadius: 3 },
+                    { label: ERROR_NAMES.other.short, data: trend.map(t => t.otherErrors), borderColor: C.other, backgroundColor: 'rgba(163,113,247,0.08)', fill: true, tension: 0.3, pointRadius: 3 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: C.text } } },
+                scales: {
+                    x: { ticks: { color: C.text }, grid: { color: C.grid } },
+                    y: { beginAtZero: true, ticks: { color: C.text, stepSize: 1 }, grid: { color: C.grid } }
+                }
+            }
+        });
+    }
+
+    function renderPeriodTable(machines) {
+        const tbody = document.getElementById('periodBody');
+        tbody.innerHTML = machines.map(s => `
+            <tr>
+                <td><strong>${s.name}</strong></td>
+                <td>${fmtTime(s.greenSec)}</td>
+                <td>${fmtTime(s.yellowSec)}</td>
+                <td>${fmtTime(s.redSec)}</td>
+                <td>
+                    <div class="efficiency-bar">
+                        <div class="efficiency-fill" style="width:${s.efficiency}%"></div>
+                        <span>${s.efficiency}%</span>
+                    </div>
+                </td>
+                <td>${s.outCount}</td>
+                <td>${s.trashCount}</td>
+                <td>${s.otherCount}</td>
+            </tr>
+        `).join('');
+    }
+
+    // Initial load
+    loadStats();
+</script>
+}

@@ -1,0 +1,670 @@
+@model List<KyoshinDashboard.Models.MachineState>
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+
+
+<!-- ── 2-Column Dashboard ── -->
+<div class="dashboard-main">
+    <!-- LEFT: Machine Grid + Panels -->
+    <div class="dashboard-left">
+        <div class="machine-grid-wrapper">
+            <div class="machine-grid" id="machineGrid">
+                @for (int i = 1; i <= MachineMonitorService.TOTAL_MACHINES; i++)
+                {
+                    var m = Model.FirstOrDefault(x => x.MachineId == i);
+                    var cssClass = m?.StatusCssClass ?? "status-off";
+                    <div class="machine-cell @cssClass" id="machine-@i" data-id="@i" onclick="selectMachine(@i)">
+                        <div class="machine-id">M@(i)</div>
+                        <div class="machine-status-text" id="status-text-@i">@(m?.StatusText ?? "Tắt")</div>
+                        <div class="machine-error" id="error-@i">@(m?.ErrorText ?? "")</div>
+                        <div class="machine-time" id="time-@i"></div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT: Charts -->
+    <div class="dashboard-right">
+        <div class="charts-stack">
+            <div class="chart-container-sm chart-status-lg">
+                <div class="chart-status-header">
+                    <h3 id="chartTitle">
+                        <svg class="w11-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="2" y="2" width="20" height="20" rx="4.5" fill="url(#w11-status-bg)" opacity="0.08"/>
+                            <rect x="2.5" y="2.5" width="19" height="19" rx="4" stroke="url(#w11-status-border)" stroke-width="1" opacity="0.15"/>
+                            <rect x="6" y="11" width="3.5" height="7" rx="1.75" fill="url(#w11-status-bar1)"/>
+                            <rect x="11" y="6" width="3.5" height="12" rx="1.75" fill="url(#w11-status-bar2)"/>
+                            <rect x="16" y="9" width="3.5" height="9" rx="1.75" fill="url(#w11-status-bar3)"/>
+                            <defs>
+                                <linearGradient id="w11-status-bg" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                                    <stop offset="0%" stop-color="#60CDFF"/>
+                                    <stop offset="100%" stop-color="#0078D4"/>
+                                </linearGradient>
+                                <linearGradient id="w11-status-border" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                                    <stop offset="0%" stop-color="#ffffff"/>
+                                    <stop offset="100%" stop-color="#0078D4"/>
+                                </linearGradient>
+                                <linearGradient id="w11-status-bar1" x1="6" y1="11" x2="9.5" y2="18" gradientUnits="userSpaceOnUse">
+                                    <stop offset="0%" stop-color="#9AD3FF"/>
+                                    <stop offset="100%" stop-color="#0078D4"/>
+                                </linearGradient>
+                                <linearGradient id="w11-status-bar2" x1="11" y1="6" x2="14.5" y2="18" gradientUnits="userSpaceOnUse">
+                                    <stop offset="0%" stop-color="#60CDFF"/>
+                                    <stop offset="100%" stop-color="#005A9E"/>
+                                </linearGradient>
+                                <linearGradient id="w11-status-bar3" x1="16" y1="9" x2="19.5" y2="18" gradientUnits="userSpaceOnUse">
+                                    <stop offset="0%" stop-color="#2899FF"/>
+                                    <stop offset="100%" stop-color="#004578"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                        <span>Chọn máy để xem biểu đồ</span>
+                    </h3>
+                    <div class="chart-controls">
+                        <label>Khoảng:
+                            <select id="chartRange" onchange="loadChartData()">
+                                <option value="10" selected>10 phút</option>
+                                <option value="30">30 phút</option>
+                                <option value="60">1 giờ</option>
+                                <option value="120">2 giờ</option>
+                                <option value="0">Cả ngày</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrapper">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-container-sm chart-error-sm">
+                <h3>
+                    <span class="chart-dot dot-out"></span>
+                    <span>@ErrorNames.Full(ErrorType.Out)</span>
+                </h3>
+                <div class="chart-canvas-wrapper">
+                    <canvas id="outErrorChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-container-sm chart-error-sm">
+                <h3>
+                    <span class="chart-dot dot-trash"></span>
+                    <span>@ErrorNames.Full(ErrorType.Trash)</span>
+                </h3>
+                <div class="chart-canvas-wrapper">
+                    <canvas id="trashErrorChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-container-sm chart-error-sm">
+                <h3>
+                    <span class="chart-dot dot-other"></span>
+                    <span>@ErrorNames.Full(ErrorType.Other)</span>
+                </h3>
+                <div class="chart-canvas-wrapper">
+                    <canvas id="otherErrorChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // === Chart color constants ===
+    const CHART_COLORS = {
+        green: '#2DA44E',
+        greenFill: 'rgba(45, 164, 78, 0.12)',
+        yellow: '#C4820E',
+        yellowFill: 'rgba(196, 130, 14, 0.12)',
+        red: '#C42B1C',
+        redFill: 'rgba(196, 43, 28, 0.12)',
+        gray: '#8A8A8A',
+        grayFill: 'rgba(138, 138, 138, 0.08)',
+        out: '#C42B1C',
+        outFill: 'rgba(196, 43, 28, 0.12)',
+        trash: '#D68000',
+        trashFill: 'rgba(214, 128, 0, 0.12)',
+        other: '#8764B8',
+        otherFill: 'rgba(135, 100, 184, 0.12)',
+        grid: 'rgba(0, 0, 0, 0.04)',
+        text: '#616161',
+        accent: '#005FB8'
+    };
+
+    // === Disable all Chart.js animations globally ===
+    Chart.defaults.animation = false;
+    Chart.defaults.transitions.active.animation.duration = 0;
+
+    // === SignalR Connection (reuse from _Layout) ===
+    const hubConn = window.machineConnection;
+
+    hubConn.on("InitializeStates", (states) => {
+        states.forEach(updateMachineCell);
+        updateErrorAlerts();
+    });
+
+    hubConn.on("UpdateMachineStates", (states) => {
+        states.forEach(s => {
+            const oldStatus = getStoredStatus(s.machineId);
+            updateMachineCell(s);
+            flashMachine(s.machineId);
+            if (oldStatus && oldStatus !== s.statusText) {
+                addActivityLog(s.machineId, oldStatus, s.statusText, s.errorText);
+            }
+        });
+        updateErrorAlerts();
+    });
+
+    // === Machine Grid ===
+    const machineLastChange = {};
+
+    function updateMachineCell(m) {
+        const cell = document.getElementById(`machine-${m.machineId}`);
+        if (!cell) return;
+        cell.className = `machine-cell ${m.statusCssClass}`;
+        document.getElementById(`status-text-${m.machineId}`).textContent = m.statusText;
+
+        const errorEl = document.getElementById(`error-${m.machineId}`);
+        let dots = '';
+        if (m.hasOutError) dots += '<span style="width:8px;height:8px;border-radius:50%;background:#C42B1C;display:inline-block" title="' + ERROR_NAMES.out.full + '"></span>';
+        if (m.hasTrashError) dots += '<span style="width:8px;height:8px;border-radius:50%;background:#D68000;display:inline-block" title="' + ERROR_NAMES.trash.full + '"></span>';
+        if (m.hasOtherError) dots += '<span style="width:8px;height:8px;border-radius:50%;background:#8764B8;display:inline-block" title="' + ERROR_NAMES.other.full + '"></span>';
+        errorEl.innerHTML = dots;
+        errorEl.dataset.errorText = m.errorText || '';
+
+        if (m.lastChange) {
+            const [h, min, s] = m.lastChange.split(':').map(Number);
+            const d = new Date();
+            d.setHours(h, min, s, 0);
+            machineLastChange[m.machineId] = d;
+        }
+        updateElapsedTime(m.machineId);
+    }
+
+    function formatElapsed(ms) {
+        if (ms < 0) ms = 0;
+        const totalSec = Math.floor(ms / 1000);
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        if (h > 0) return `${h}h ${m}m`;
+        if (m > 0) return `${m}m ${s}s`;
+        return `${s}s`;
+    }
+
+    function updateElapsedTime(machineId) {
+        const el = document.getElementById(`time-${machineId}`);
+        if (!el) return;
+        const start = machineLastChange[machineId];
+        if (!start) { el.textContent = ''; return; }
+        el.textContent = formatElapsed(Date.now() - start.getTime());
+    }
+
+    function updateAllElapsedTimes() {
+        for (const id in machineLastChange) {
+            updateElapsedTime(parseInt(id));
+        }
+    }
+
+    setInterval(updateAllElapsedTimes, 1000);
+
+    function flashMachine(id) {
+        const cell = document.getElementById(`machine-${id}`);
+        if (!cell) return;
+        cell.classList.add('flash');
+        setTimeout(() => cell.classList.remove('flash'), 600);
+    }
+
+
+
+    // === Error Alerts & Activity Log ===
+    const machineStoredStatus = {};
+
+    function getStoredStatus(machineId) {
+        return machineStoredStatus[machineId] || null;
+    }
+
+    const _origUpdateMachineCell = updateMachineCell;
+    updateMachineCell = function(m) {
+        machineStoredStatus[m.machineId] = m.statusText;
+        _origUpdateMachineCell(m);
+    };
+
+    function updateErrorAlerts() {
+        const body = document.getElementById('errorAlertBody');
+        const badge = document.getElementById('errorCount');
+        if (!body || !badge) return; // error alert panel is not on the page
+        const items = [];
+
+        document.querySelectorAll('.machine-cell').forEach(cell => {
+            const id = cell.dataset.id;
+            const errorEl = document.getElementById(`error-${id}`);
+            const errorText = errorEl ? (errorEl.dataset.errorText || '').trim() : '';
+            if (!errorText) return;
+
+            const errors = errorText.split(', ');
+            errors.forEach(err => {
+                let cls = 'error-out';
+                if (err === ERROR_NAMES.trash.short) cls = 'error-trash';
+                else if (err === ERROR_NAMES.other.short) cls = 'error-other';
+                items.push(`<div class="error-item ${cls}"><span class="error-machine">M${id}</span><span class="error-type">${err}</span><span class="error-time">${document.getElementById('time-' + id)?.textContent || ''}</span></div>`);
+            });
+        });
+
+        badge.textContent = items.length;
+        badge.style.display = items.length > 0 ? 'inline-flex' : 'none';
+
+        if (items.length === 0) {
+            body.innerHTML = '<div class="info-empty">✅ Không có lỗi nào</div>';
+        } else {
+            body.innerHTML = items.join('');
+        }
+    }
+
+    setInterval(updateErrorAlerts, 2000);
+
+    const activityEntries = [];
+    const MAX_ACTIVITY = 15;
+
+    function addActivityLog(machineId, oldStatus, newStatus, errorText) {
+        const now = new Date();
+        const time = now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+        const statusIcons = { 'CHẠY': '🟢', 'CHỜ': '🟡', 'DỪNG': '🔴', 'TẮT': '⬛' };
+        const newIcon = statusIcons[newStatus] || '⬜';
+
+        let errTag = '';
+        if (errorText) {
+            errTag = `<span class="activity-error">${errorText}</span>`;
+        }
+
+        activityEntries.unshift({
+            html: `<div class="activity-item"><span class="activity-time">${time}</span><span class="activity-machine">M${machineId}</span><span class="activity-change">${oldStatus} → ${newIcon} ${newStatus}</span>${errTag}</div>`
+        });
+
+        if (activityEntries.length > MAX_ACTIVITY) activityEntries.pop();
+
+        const log = document.getElementById('activityLog');
+        if (!log) return; // activity log panel is not on the page
+        log.innerHTML = activityEntries.map(e => e.html).join('');
+    }
+
+    // === Charts ===
+    let selectedMachineId = null;
+    let statusChart, outChart, trashChart, otherChart;
+
+    function selectMachine(id) {
+        selectedMachineId = id;
+        document.querySelectorAll('.machine-cell').forEach(c => c.classList.remove('selected'));
+        document.getElementById(`machine-${id}`).classList.add('selected');
+
+        document.getElementById('chartTitle').querySelector('span').textContent = `Biểu đồ máy M${id}`;
+        loadChartData();
+    }
+
+    async function loadChartData() {
+        if (!selectedMachineId) return;
+        const rangeMin = parseInt(document.getElementById('chartRange').value);
+        const { xMin, xMax } = getAxisRange();
+        try {
+            // Exactly the window on screen, also across midnight
+            const resp = await fetch(`/api/machineapi/chart-data?machineId=${selectedMachineId}&from=${toLocalIso(xMin)}&to=${toLocalIso(xMax)}`);
+            const data = await resp.json();
+
+            let statusTL = data.statusTimeline;
+            let errorTL = data.errorTimeline;
+
+            renderStatusChart(statusTL, rangeMin);
+            renderErrorTimeline('outErrorChart', 'outChart', errorTL, 'outError', CHART_COLORS.out, ERROR_NAMES.out.short, rangeMin);
+            renderErrorTimeline('trashErrorChart', 'trashChart', errorTL, 'trashError', CHART_COLORS.trash, ERROR_NAMES.trash.short, rangeMin);
+            renderErrorTimeline('otherErrorChart', 'otherChart', errorTL, 'otherError', CHART_COLORS.other, ERROR_NAMES.other.short, rangeMin);
+        } catch (e) {
+            console.error('Failed to load chart data:', e);
+        }
+    }
+
+    // Factory local time as the API expects it: yyyy-MM-ddTHH:mm:ss (no time zone)
+    function toLocalIso(d) {
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
+
+    function renderStatusChart(timeline, rangeMin) {
+        const ctx = document.getElementById('statusChart').getContext('2d');
+        if (statusChart) statusChart.destroy();
+
+        const nowDate = new Date();
+        let xMin, xMax;
+        if (rangeMin > 0) {
+            xMin = new Date(nowDate.getTime() - rangeMin * 60000);
+            xMax = new Date(nowDate.getTime() + 60000);
+        } else {
+            xMin = new Date(nowDate);
+            xMin.setHours(0, 0, 0, 0);
+            xMax = new Date(nowDate.getTime() + 60000);
+        }
+
+        const statusY = { 'Green': 3, 'Yellow': 2, 'Red': 1, 'Off': 0 };
+        const statusKey = { 'Green': 0, 'Yellow': 1, 'Red': 2, 'Off': 3 };
+        const statusNames = { 'Green': 'Chạy', 'Yellow': 'Chờ', 'Red': 'Dừng', 'Off': 'Tắt' };
+        const statusColors = { 'Green': CHART_COLORS.green, 'Yellow': CHART_COLORS.yellow, 'Red': CHART_COLORS.red, 'Off': CHART_COLORS.gray };
+
+        const datasets = [[], [], [], []];
+        const lastEndTime = [null, null, null, null];
+
+        const filteredTimeline = timeline.filter(t => {
+            const startD = new Date(t.start);
+            const endD = new Date(t.end);
+            return endD >= xMin && startD <= xMax;
+        });
+
+        filteredTimeline.forEach(t => {
+            const idx = statusKey[t.status];
+            if (idx === undefined) return;
+            const yVal = statusY[t.status];
+            let startDate = new Date(t.start);
+            let endDate = new Date(t.end);
+            if (startDate < xMin) startDate = new Date(xMin);
+            if (endDate > xMax) endDate = new Date(xMax);
+
+            if (lastEndTime[idx] !== null && startDate.getTime() - lastEndTime[idx].getTime() > 2000) {
+                datasets[idx].push({ x: new Date(lastEndTime[idx]), y: NaN });
+            }
+
+            datasets[idx].push({ x: startDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
+            datasets[idx].push({ x: endDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
+            lastEndTime[idx] = endDate;
+        });
+
+        const lastEntry = timeline.length > 0 ? timeline[timeline.length - 1] : null;
+        const currentStatus = lastEntry ? lastEntry.status : 'Off';
+        const currentY = statusY[currentStatus] ?? 0;
+        const currentColor = statusColors[currentStatus] ?? CHART_COLORS.gray;
+        const currentName = statusNames[currentStatus] ?? 'Tắt';
+
+        const markerDs = {
+            label: '▶ ' + currentName,
+            data: [{ x: nowDate, y: currentY }],
+            borderColor: currentColor,
+            backgroundColor: currentColor,
+            pointRadius: 7,
+            pointStyle: 'circle',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            showLine: false,
+            fill: false
+        };
+
+        const makeDs = (label, data, color, fillColor) => ({
+            label, data,
+            borderColor: color,
+            backgroundColor: fillColor,
+            fill: true,
+            stepped: true,
+            spanGaps: false,
+            pointRadius: 0,
+            borderWidth: 2
+        });
+
+        const nowLinePlugin = {
+            id: 'nowLine',
+            afterDraw(chart) {
+                const xScale = chart.scales.x;
+                const yScale = chart.scales.y;
+                const xPixel = xScale.getPixelForValue(nowDate);
+                if (xPixel < xScale.left || xPixel > xScale.right) return;
+
+                const ctx = chart.ctx;
+                ctx.save();
+                ctx.beginPath();
+                ctx.setLineDash([4, 4]);
+                ctx.strokeStyle = currentColor;
+                ctx.lineWidth = 1.5;
+                ctx.globalAlpha = 0.6;
+                ctx.moveTo(xPixel, yScale.top);
+                ctx.lineTo(xPixel, yScale.bottom);
+                ctx.stroke();
+
+                ctx.setLineDash([]);
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = currentColor;
+                ctx.font = 'bold 9px Inter, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('BÂY GIỜ', xPixel, yScale.top - 4);
+                ctx.restore();
+            }
+        };
+
+        statusChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [
+                    makeDs('Chạy',  datasets[0], CHART_COLORS.green, CHART_COLORS.greenFill),
+                    makeDs('Chờ',   datasets[1], CHART_COLORS.yellow, CHART_COLORS.yellowFill),
+                    makeDs('Dừng',  datasets[2], CHART_COLORS.red, CHART_COLORS.redFill),
+                    makeDs('Tắt',   datasets[3], CHART_COLORS.gray, CHART_COLORS.grayFill),
+                    markerDs
+                ]
+            },
+            plugins: [nowLinePlugin],
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+                plugins: {
+                    legend: {
+                        display: true, position: 'top',
+                        labels: { color: CHART_COLORS.text, boxWidth: 12, font: { size: 10 }, padding: 8 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => {
+                                const raw = items[0]?.raw;
+                                if (!raw?.segStart) return '';
+                                const fmt = d => d.toLocaleTimeString('vi-VN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+                                return fmt(raw.segStart) + ' → ' + fmt(raw.segEnd);
+                            },
+                            label: (ctx) => {
+                                const raw = ctx.raw;
+                                const names = { 'Green': 'CHẠY', 'Yellow': 'CHỜ', 'Red': 'DỪNG', 'Off': 'TẮT' };
+                                if (ctx.dataset.label.startsWith('▶')) return ctx.dataset.label;
+                                const name = names[raw?.segStatus] || ctx.dataset.label;
+                                if (!raw?.segStart) return name;
+                                const dur = Math.round((raw.segEnd - raw.segStart) / 1000);
+                                const m = Math.floor(dur / 60), s = dur % 60;
+                                return name + ' — ' + (m > 0 ? m + 'p ' : '') + s + 's';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        min: xMin,
+                        max: xMax,
+                        time: { unit: 'minute', displayFormats: { minute: 'HH:mm', second: 'HH:mm:ss' }, tooltipFormat: 'HH:mm:ss' },
+                        ticks: { color: CHART_COLORS.text, maxTicksLimit: 10, font: { size: 10 } },
+                        grid: { color: CHART_COLORS.grid }
+                    },
+                    y: {
+                        min: -0.3, max: 3.5,
+                        ticks: {
+                            color: CHART_COLORS.text, stepSize: 1, font: { size: 10 },
+                            callback: v => { if (v >= 0 && v <= 3) return ['Tắt', 'Dừng', 'Chờ', 'Chạy'][v]; return ''; }
+                        },
+                        grid: { color: CHART_COLORS.grid }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderErrorTimeline(canvasId, chartVarName, errorTimeline, errorKey, color, label, rangeMin) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        if (window[chartVarName]) window[chartVarName].destroy();
+
+        const now = new Date();
+        let xMin, xMax;
+        if (rangeMin > 0) {
+            xMin = new Date(now.getTime() - rangeMin * 60000);
+            xMax = new Date(now.getTime() + 60000);
+        } else {
+            xMin = new Date(now);
+            xMin.setHours(0, 0, 0, 0);
+            xMax = new Date(now.getTime() + 60000);
+        }
+
+        const points = [];
+        let lastEndDate = null;
+
+        const filtered = errorTimeline.filter(t => {
+            const s = new Date(t.start);
+            const e = new Date(t.end);
+            return e >= xMin && s <= xMax;
+        });
+
+        filtered.forEach(t => {
+            const errVal = t[errorKey] ? 1 : 0;
+            if (errVal === 0) return;
+            let startDate = new Date(t.start);
+            let endDate = new Date(t.end);
+            if (startDate < xMin) startDate = new Date(xMin);
+            if (endDate > xMax) endDate = new Date(xMax);
+
+            if (lastEndDate !== null && startDate.getTime() - lastEndDate.getTime() > 2000) {
+                points.push({ x: new Date(lastEndDate), y: NaN });
+            }
+
+            points.push({ x: startDate, y: errVal, segStart: startDate, segEnd: endDate });
+            points.push({ x: endDate, y: errVal, segStart: startDate, segEnd: endDate });
+            lastEndDate = endDate;
+        });
+
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: label,
+                    data: points,
+                    borderColor: color,
+                    backgroundColor: color + '20',
+                    fill: { target: 1 },
+                    stepped: true,
+                    spanGaps: false,
+                    pointRadius: 0,
+                    borderWidth: 2
+                }, {
+                    label: 'OFF',
+                    data: [{ x: xMin, y: 0 }, { x: xMax, y: 0 }],
+                    borderColor: color + '40',
+                    borderWidth: 1,
+                    pointRadius: 0,
+                    fill: false,
+                    borderDash: []
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        filter: (item) => item.raw.y > 0,
+                        callbacks: {
+                            title: (items) => {
+                                const raw = items[0]?.raw;
+                                if (!raw?.segStart) return '';
+                                const fmt = d => d.toLocaleTimeString('vi-VN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+                                return fmt(raw.segStart) + ' → ' + fmt(raw.segEnd);
+                            },
+                            label: (ctx) => {
+                                const raw = ctx.raw;
+                                const state = raw.y === 1 ? 'ON' : 'OFF';
+                                if (!raw?.segStart) return state;
+                                const dur = Math.round((raw.segEnd - raw.segStart) / 1000);
+                                const m = Math.floor(dur / 60), s = dur % 60;
+                                return label + ' ' + state + ' — ' + (m > 0 ? m + 'p ' : '') + s + 's';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        min: xMin,
+                        max: xMax,
+                        time: { unit: 'minute', displayFormats: { minute: 'HH:mm', second: 'HH:mm:ss' }, tooltipFormat: 'HH:mm:ss' },
+                        ticks: { color: CHART_COLORS.text, maxTicksLimit: 8, font: { size: 10 } },
+                        grid: { color: CHART_COLORS.grid }
+                    },
+                    y: {
+                        min: -0.1, max: 1.3,
+                        ticks: {
+                            color: CHART_COLORS.text, stepSize: 1, font: { size: 10 },
+                            callback: v => v === 0 ? 'OFF' : v === 1 ? 'ON' : ''
+                        },
+                        grid: { color: CHART_COLORS.grid }
+                    }
+                }
+            }
+        });
+
+        window[chartVarName] = chart;
+    }
+
+    // Initial summary update (handled by SignalR InitializeStates)
+
+    // Pause auto-refresh when hovering over charts
+    let isHoveringChart = false;
+    document.querySelectorAll('.dashboard-right canvas').forEach(canvas => {
+        canvas.addEventListener('mouseenter', () => isHoveringChart = true);
+        canvas.addEventListener('mouseleave', () => isHoveringChart = false);
+    });
+    const origLoadChartData = loadChartData;
+    loadChartData = async function() {
+        await origLoadChartData();
+        document.querySelectorAll('.dashboard-right canvas').forEach(canvas => {
+            canvas.onmouseenter = () => isHoveringChart = true;
+            canvas.onmouseleave = () => isHoveringChart = false;
+        });
+    };
+
+    // === Smooth scrolling: pan x-axis every 100ms ===
+    function getAxisRange() {
+        const rangeMin = parseInt(document.getElementById('chartRange').value);
+        const now = new Date();
+        let xMin, xMax;
+        if (rangeMin > 0) {
+            xMin = new Date(now.getTime() - rangeMin * 60000);
+            xMax = new Date(now.getTime() + 60000);
+        } else {
+            xMin = new Date(now); xMin.setHours(0, 0, 0, 0);
+            xMax = new Date(now.getTime() + 60000);
+        }
+        return { xMin, xMax };
+    }
+
+    setInterval(() => {
+        if (!selectedMachineId || isHoveringChart) return;
+        const { xMin, xMax } = getAxisRange();
+        const allCharts = [statusChart, window['outChart'], window['trashChart'], window['otherChart']];
+        allCharts.forEach(c => {
+            if (!c) return;
+            c.options.scales.x.min = xMin;
+            c.options.scales.x.max = xMax;
+            c.update('none');
+        });
+    }, 100);
+
+    // Auto-refresh data every 2 seconds
+    setInterval(() => {
+        if (selectedMachineId && !isHoveringChart) loadChartData();
+    }, 2000);
+
+</script>
+}

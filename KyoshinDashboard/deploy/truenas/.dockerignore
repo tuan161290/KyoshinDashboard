@@ -1,0 +1,7 @@
+# Only app/ and the Dockerfile are needed in the image build context
+*
+!Dockerfile
+!app/
+app/*.db
+app/*.db-*
+app/appsettings.Development.json

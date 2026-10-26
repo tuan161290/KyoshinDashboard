@@ -1,0 +1,333 @@
+@{
+    ViewData["Title"] = "Báo cáo";
+}
+
+<style>
+    .report-filters {
+        background: var(--bg-card);
+        border: 1px solid var(--border-card);
+        border-radius: var(--radius-card);
+        box-shadow: var(--shadow-card);
+        padding: 14px 16px;
+        margin-bottom: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        font-size: 13px;
+        color: var(--text-secondary);
+    }
+    .report-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+    .report-row input[type="number"] {
+        width: 70px; background: var(--bg-input); border: 1px solid var(--border);
+        border-radius: var(--radius-control); padding: 6px 8px; font: inherit; color: var(--text-primary);
+    }
+    .report-row label.check { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+    .report-btn {
+        background: var(--accent); color: #fff; border: none; border-radius: var(--radius-control);
+        padding: 7px 18px; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .report-btn:disabled { opacity: .6; cursor: default; }
+    .report-btn-secondary { background: var(--green); }
+    .report-link-btn {
+        background: none; border: 1px solid var(--border-strong); border-radius: var(--radius-control);
+        padding: 3px 10px; font: inherit; font-size: 12px; color: var(--text-secondary); cursor: pointer;
+    }
+    .machine-picker { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 4px; }
+    .machine-chip {
+        border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg-input);
+        font: inherit; font-size: 11px; padding: 4px 0; cursor: pointer; color: var(--text-muted);
+    }
+    .machine-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .report-note { font-size: 12px; color: var(--text-muted); }
+    .report-error { color: var(--red); font-weight: 600; }
+    .report-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 16px; align-items: start; }
+    .report-layout h3 { font-size: 14px; font-weight: 600; color: var(--text-secondary); margin: 0 0 10px; }
+    #summaryBody tr { cursor: pointer; }
+    #summaryBody tr.selected td { background: var(--accent-bg); }
+    .data-table td.num, .data-table th.num { text-align: right; white-space: nowrap; }
+    .data-table tr.avg-row td { border-top: 2px solid var(--border-strong); font-weight: 700; }
+    .data-table tr.no-rate td { color: var(--text-muted); }
+    .break-input {
+        width: 64px; text-align: right; background: var(--bg-input); border: 1px solid var(--border);
+        border-radius: 4px; padding: 3px 6px; font: inherit;
+    }
+    .c-green { color: var(--green); } .c-yellow { color: var(--yellow); } .c-red { color: var(--red); } .c-gray { color: var(--gray); }
+    @@media (max-width: 1200px) {
+        .machine-picker { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+        .report-layout { grid-template-columns: 1fr; }
+    }
+</style>
+
+<div class="page-header">
+    <h1>📑 Báo cáo hiệu suất</h1>
+</div>
+
+<div class="report-filters">
+    <div class="report-row">
+        <label>Từ ngày: <input type="date" id="fromDate" value="@ViewBag.From" /></label>
+        <label>Đến ngày: <input type="date" id="toDate" value="@ViewBag.To" /></label>
+        <span>Ca:</span>
+        <label class="check"><input type="checkbox" class="shift-check" value="1" checked /> Ca 1 (06–14h)</label>
+        <label class="check"><input type="checkbox" class="shift-check" value="2" checked /> Ca 2 (14–22h)</label>
+        <label class="check"><input type="checkbox" class="shift-check" value="3" checked /> Ca 3 (22–06h)</label>
+        <label>Thời gian nghỉ mặc định: <input type="number" id="defaultBreak" value="0" min="0" step="1" /> phút/ngày</label>
+        <button class="report-btn" id="runBtn" onclick="loadReport()">Xem báo cáo</button>
+        <button class="report-btn report-btn-secondary" id="excelBtn" onclick="exportExcel()" disabled>📥 Xuất Excel</button>
+    </div>
+    <div class="report-row">
+        <span>Máy:</span>
+        <button class="report-link-btn" onclick="pickMachines(() => true)">Tất cả</button>
+        <button class="report-link-btn" onclick="pickMachines(() => false)">Bỏ chọn</button>
+        <button class="report-link-btn" onclick="pickMachines(id => id <= 24)">Station 00 (M1–M24)</button>
+        <button class="report-link-btn" onclick="pickMachines(id => id > 24)">Station 01 (M25–M48)</button>
+        <span class="report-note" id="pickedCount"></span>
+    </div>
+    <div class="machine-picker" id="machinePicker"></div>
+    <div class="report-note">
+        Ngày sản xuất tính từ 06:00 đến 06:00 hôm sau. Tỷ lệ % = thời gian ÷ (Chạy + Chờ + Dừng − thời gian nghỉ);
+        thời gian Tắt máy không tính vào. Sửa ô "Nghỉ" từng ngày để tính lại.
+    </div>
+    <div class="report-error" id="reportError"></div>
+</div>
+
+<div class="report-layout" id="reportResult" style="display:none">
+    <div class="history-table-wrapper">
+        <h3>Tổng hợp theo máy (trung bình các ngày)</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Máy</th>
+                    <th class="num">Số ngày</th>
+                    <th class="num c-green">Chạy %</th>
+                    <th class="num c-yellow">Chờ %</th>
+                    <th class="num c-red">Dừng %</th>
+                    <th class="num c-gray">Tắt (phút)</th>
+                </tr>
+            </thead>
+            <tbody id="summaryBody"></tbody>
+        </table>
+    </div>
+    <div class="history-table-wrapper">
+        <h3 id="detailTitle">Chi tiết</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Ngày</th>
+                    <th class="num">Nghỉ (phút)</th>
+                    <th class="num c-green">Chạy (Run)</th>
+                    <th class="num c-yellow">Chờ (Wait)</th>
+                    <th class="num c-red">Dừng (Stop)</th>
+                    <th class="num c-gray">Tắt (phút)</th>
+                </tr>
+            </thead>
+            <tbody id="detailBody"></tbody>
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    const TOTAL_MACHINES = 48;
+    const picked = new Set(Array.from({ length: TOTAL_MACHINES }, (_, i) => i + 1));
+    let report = null;          // last API answer
+    let selectedMachine = null; // machineId shown in the detail table
+    const breaks = {};          // "machineId|yyyy-MM-dd" -> break minutes edited on the page
+
+    // ── Machine picker ──
+    function renderPicker() {
+        const box = document.getElementById('machinePicker');
+        box.innerHTML = '';
+        for (let id = 1; id <= TOTAL_MACHINES; id++) {
+            const b = document.createElement('button');
+            b.className = 'machine-chip' + (picked.has(id) ? ' on' : '');
+            b.textContent = 'M' + id;
+            b.onclick = () => { picked.has(id) ? picked.delete(id) : picked.add(id); renderPicker(); };
+            box.appendChild(b);
+        }
+        document.getElementById('pickedCount').textContent = `Đã chọn ${picked.size}/${TOTAL_MACHINES} máy`;
+    }
+
+    function pickMachines(test) {
+        picked.clear();
+        for (let id = 1; id <= TOTAL_MACHINES; id++) if (test(id)) picked.add(id);
+        renderPicker();
+    }
+
+    // ── Rates (same formula as the server, Models/ProductionRate.cs) ──
+    function rateBase(d, breakMin) { return d.greenSec + d.yellowSec + d.redSec - breakMin * 60; }
+    function pct(sec, base) { return base > 0 ? sec / base * 100 : null; }
+    function minutes(sec) { return Math.round(sec / 60); }
+    function fmtPct(p) { return p === null ? '—' : p.toFixed(1) + '%'; }
+    function fmtDate(iso) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; }
+
+    function breakOf(machineId, date) {
+        const key = machineId + '|' + date;
+        if (key in breaks) return breaks[key];
+        return Math.max(0, Number(document.getElementById('defaultBreak').value) || 0);
+    }
+
+    // Per day: rates and minutes; average: rates over days that have a rate, minutes over all days
+    function computeMachine(m) {
+        const rows = m.days.map(d => {
+            const breakMin = breakOf(m.machineId, d.date);
+            const base = rateBase(d, breakMin);
+            return {
+                date: d.date, breakMin,
+                run: pct(d.greenSec, base), wait: pct(d.yellowSec, base), stop: pct(d.redSec, base),
+                runMin: minutes(d.greenSec), waitMin: minutes(d.yellowSec), stopMin: minutes(d.redSec),
+                offMin: minutes(d.offSec)
+            };
+        });
+        const rated = rows.filter(r => r.run !== null);
+        const avg = (list, f) => list.length ? list.reduce((s, r) => s + f(r), 0) / list.length : null;
+        const average = {
+            days: rows.length,
+            run: avg(rated, r => r.run), wait: avg(rated, r => r.wait), stop: avg(rated, r => r.stop),
+            runMin: avg(rows, r => r.runMin), waitMin: avg(rows, r => r.waitMin), stopMin: avg(rows, r => r.stopMin),
+            offMin: avg(rows, r => r.offMin), breakMin: avg(rows, r => r.breakMin)
+        };
+        return { rows, average };
+    }
+
+    // ── Load ──
+    async function loadReport() {
+        const errorBox = document.getElementById('reportError');
+        errorBox.textContent = '';
+        const from = document.getElementById('fromDate').value;
+        const to = document.getElementById('toDate').value;
+        const shifts = [...document.querySelectorAll('.shift-check:checked')].map(c => c.value);
+        if (!from || !to) { errorBox.textContent = 'Chọn Từ ngày và Đến ngày.'; return; }
+        if (to < from) { errorBox.textContent = 'Đến ngày phải sau hoặc bằng Từ ngày.'; return; }
+        if (picked.size === 0) { errorBox.textContent = 'Chọn ít nhất một máy.'; return; }
+        if (shifts.length === 0) { errorBox.textContent = 'Chọn ít nhất một ca.'; return; }
+
+        const machines = picked.size === TOTAL_MACHINES ? '' : [...picked].sort((a, b) => a - b).join(',');
+        const btn = document.getElementById('runBtn');
+        btn.disabled = true; btn.textContent = 'Đang tải...';
+        try {
+            const resp = await fetch(`/api/machineapi/report?from=${from}&to=${to}&shifts=${shifts.join(',')}&machines=${machines}`);
+            if (!resp.ok) { errorBox.textContent = await resp.text() || ('Lỗi ' + resp.status); return; }
+            report = await resp.json();
+            for (const k in breaks) delete breaks[k];
+            if (!report.machines.some(m => m.machineId === selectedMachine)) selectedMachine = report.machines[0]?.machineId ?? null;
+            document.getElementById('reportResult').style.display = '';
+            document.getElementById('excelBtn').disabled = false;
+            render();
+        } catch (e) {
+            errorBox.textContent = 'Không tải được báo cáo: ' + e.message;
+        } finally {
+            btn.disabled = false; btn.textContent = 'Xem báo cáo';
+        }
+    }
+
+    // ── Render ──
+    function render() {
+        renderSummary();
+        renderDetail();
+    }
+
+    function renderSummary() {
+        document.getElementById('summaryBody').innerHTML = report.machines.map(m => {
+            const { average: a } = computeMachine(m);
+            const sel = m.machineId === selectedMachine ? ' class="selected"' : '';
+            if (a.days === 0)
+                return `<tr${sel} onclick="selectMachine(${m.machineId})"><td><strong>${m.name}</strong></td><td class="num">0</td><td colspan="4" class="empty-row">Không có dữ liệu</td></tr>`;
+            return `<tr${sel} onclick="selectMachine(${m.machineId})">
+                <td><strong>${m.name}</strong></td>
+                <td class="num">${a.days}</td>
+                <td class="num c-green">${fmtPct(a.run)}</td>
+                <td class="num c-yellow">${fmtPct(a.wait)}</td>
+                <td class="num c-red">${fmtPct(a.stop)}</td>
+                <td class="num">${Math.round(a.offMin)}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    function cell(p, min, cls) {
+        return `<td class="num ${cls}">${fmtPct(p)} - ${Math.round(min)} phút</td>`;
+    }
+
+    function renderDetail() {
+        const body = document.getElementById('detailBody');
+        const m = report.machines.find(x => x.machineId === selectedMachine);
+        const shiftText = report.shifts.length === 3 ? 'cả ngày' : report.shifts.map(s => 'Ca ' + s).join(', ');
+        document.getElementById('detailTitle').textContent = m
+            ? `Chi tiết máy ${m.name} (${fmtDate(report.from)} – ${fmtDate(report.to)}, ${shiftText})`
+            : 'Chi tiết';
+        if (!m || m.days.length === 0) {
+            body.innerHTML = '<tr><td colspan="6" class="empty-row">Không có dữ liệu trong khoảng đã chọn</td></tr>';
+            return;
+        }
+        const { rows, average: a } = computeMachine(m);
+        body.innerHTML = rows.map(r => `
+            <tr class="${r.run === null ? 'no-rate' : ''}">
+                <td>${fmtDate(r.date)}</td>
+                <td class="num"><input class="break-input" type="number" min="0" step="1" value="${r.breakMin}"
+                    onchange="setBreak(${m.machineId}, '${r.date}', this.value)" /></td>
+                ${cell(r.run, r.runMin, 'c-green')}
+                ${cell(r.wait, r.waitMin, 'c-yellow')}
+                ${cell(r.stop, r.stopMin, 'c-red')}
+                <td class="num">${r.offMin} phút</td>
+            </tr>`).join('') + `
+            <tr class="avg-row">
+                <td>Trung bình</td>
+                <td class="num">${Math.round(a.breakMin)}</td>
+                ${cell(a.run, a.runMin, 'c-green')}
+                ${cell(a.wait, a.waitMin, 'c-yellow')}
+                ${cell(a.stop, a.stopMin, 'c-red')}
+                <td class="num">${Math.round(a.offMin)} phút</td>
+            </tr>`;
+    }
+
+    function selectMachine(id) {
+        selectedMachine = id;
+        render();
+    }
+
+    function setBreak(machineId, date, value) {
+        breaks[machineId + '|' + date] = Math.max(0, Number(value) || 0);
+        render();
+    }
+
+    // ── Excel: the report shown on the page (same filters, same break minutes) ──
+    async function exportExcel() {
+        if (!report) return;
+        const errorBox = document.getElementById('reportError');
+        errorBox.textContent = '';
+        const btn = document.getElementById('excelBtn');
+        btn.disabled = true; btn.textContent = 'Đang tạo file...';
+        try {
+            const resp = await fetch('/api/machineapi/report-excel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    from: report.from, to: report.to,
+                    machines: report.machines.map(m => m.machineId),
+                    shifts: report.shifts,
+                    defaultBreak: Math.max(0, Number(document.getElementById('defaultBreak').value) || 0),
+                    breaks
+                })
+            });
+            if (!resp.ok) { errorBox.textContent = await resp.text() || ('Lỗi ' + resp.status); return; }
+            const blob = await resp.blob();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `BaoCao_${report.from}_${report.to}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+        } catch (e) {
+            errorBox.textContent = 'Không tạo được file Excel: ' + e.message;
+        } finally {
+            btn.disabled = false; btn.textContent = '📥 Xuất Excel';
+        }
+    }
+
+    // Changing the default break re-applies it to the days not edited by hand
+    document.getElementById('defaultBreak').addEventListener('change', () => { if (report) render(); });
+
+    renderPicker();
+    loadReport();
+</script>
+}

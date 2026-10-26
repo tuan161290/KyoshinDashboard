@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="KyoshinDashboard/KyoshinDashboard.csproj" />
+  <Project Path="KyoshinAgent/KyoshinAgent.csproj" />
+  <Project Path="../Kyoshin.Plc/Kyoshin.Plc.csproj" />
+</Solution>
