@@ -101,9 +101,8 @@ namespace KyoshinDashboard.Controllers
                 var clampedStart = e.StartTime < rangeStart ? rangeStart : e.StartTime;
                 var endTime = e.EndTime ?? DateTime.Now;
                 var clampedEnd = endTime > rangeEnd ? rangeEnd : endTime;
-
-                // Skip very short error events (< 3 seconds) to reduce chart noise
-                if ((clampedEnd - clampedStart).TotalSeconds < 3) continue;
+                // Every logged error is shown, like the status timeline: noise is already filtered by the agent
+                if (clampedEnd <= clampedStart) continue;
 
                 errorTimeline.Add(new
                 {
