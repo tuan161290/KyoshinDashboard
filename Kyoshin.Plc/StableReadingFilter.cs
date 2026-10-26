@@ -8,10 +8,11 @@ namespace Kyoshin.Plc
     /// shorter pulses, flicker and contact bounce are ignored. The time is set separately for
     /// ON (Plc:OnConfirmSeconds — an error signal turning on, or the machine changing to a lamp colour) and
     /// OFF (Plc:OffConfirmSeconds — an error signal turning off, or the machine going dark = Off).
+    /// A change is confirmed at the time the minimum is reached: ON read at 10:00:00 and still ON at 10:00:03
+    /// = ON from 10:00:03 (the caller stamps the change with that time).
     /// A machine's lamp status (the colour decoded from RED/YEL/GRN) and each of its 3 error signals are confirmed
     /// separately, so a colour change GRN → RED is one change (no brief "Off" in between) and a flickering error
     /// signal doesn't hold back the lamp status.
-    /// A confirmed change keeps the time it was first read, so history shows when it really happened.
     /// </summary>
     public sealed class StableReadingFilter
     {
@@ -34,12 +35,11 @@ namespace Kyoshin.Plc
 
         /// <summary>
         /// Feed one poll. Returns the confirmed reading of every machine whose signals are all confirmed
-        /// (none right after the agent starts, until each has been read unchanged for the stable time),
-        /// with the time its latest confirmed change was first read.
+        /// (none right after the agent starts, until each has been read unchanged for the required time).
         /// Machines missing from <paramref name="readings"/> (their station did not answer) lose any pending change:
-        /// a change has to be read continuously for the whole stable time.
+        /// a change has to be read continuously for the whole required time.
         /// </summary>
-        public List<(MachineReading Reading, DateTimeOffset ChangedAt)> Update(IEnumerable<MachineReading> readings, DateTimeOffset now)
+        public List<MachineReading> Update(IEnumerable<MachineReading> readings, DateTimeOffset now)
         {
             var seen = new HashSet<int>();
             foreach (var r in readings)
@@ -47,61 +47,38 @@ namespace Kyoshin.Plc
                 seen.Add(r.MachineId);
                 if (!_machines.TryGetValue(r.MachineId, out var machine))
                     _machines[r.MachineId] = machine = new MachineFilter();
-                machine.Update(r, now, this);
+                machine.Status.Update(r.Status, now, RequiredTime(r.Status));
+                machine.OutError.Update(r.OutError, now, RequiredTime(r.OutError));
+                machine.TrashError.Update(r.TrashError, now, RequiredTime(r.TrashError));
+                machine.OtherError.Update(r.OtherError, now, RequiredTime(r.OtherError));
             }
 
-            var confirmed = new List<(MachineReading, DateTimeOffset)>();
+            var confirmed = new List<MachineReading>();
             foreach (var pair in _machines)
             {
+                var m = pair.Value;
                 if (!seen.Contains(pair.Key))
-                    pair.Value.Interrupt();
-                if (pair.Value.TryGetConfirmed(pair.Key, out var reading))
-                    confirmed.Add((reading, pair.Value.ChangedAt));
+                    m.Interrupt();
+                if (m.Status.Confirmed is LampStatus status && m.OutError.Confirmed is bool outError
+                    && m.TrashError.Confirmed is bool trashError && m.OtherError.Confirmed is bool otherError)
+                    confirmed.Add(new MachineReading(pair.Key, status, outError, trashError, otherError));
             }
             return confirmed;
         }
 
         private sealed class MachineFilter
         {
-            private readonly StableValue<LampStatus> _status = new StableValue<LampStatus>();
-            private readonly StableValue<bool> _outError = new StableValue<bool>();
-            private readonly StableValue<bool> _trashError = new StableValue<bool>();
-            private readonly StableValue<bool> _otherError = new StableValue<bool>();
-
-            /// <summary>When the latest confirmed change of any of the machine's signals was first read.</summary>
-            public DateTimeOffset ChangedAt { get; private set; }
-
-            public void Update(MachineReading r, DateTimeOffset now, StableReadingFilter filter)
-            {
-                Confirmed(_status.Update(r.Status, now, filter.RequiredTime(r.Status)));
-                Confirmed(_outError.Update(r.OutError, now, filter.RequiredTime(r.OutError)));
-                Confirmed(_trashError.Update(r.TrashError, now, filter.RequiredTime(r.TrashError)));
-                Confirmed(_otherError.Update(r.OtherError, now, filter.RequiredTime(r.OtherError)));
-            }
+            public readonly StableValue<LampStatus> Status = new StableValue<LampStatus>();
+            public readonly StableValue<bool> OutError = new StableValue<bool>();
+            public readonly StableValue<bool> TrashError = new StableValue<bool>();
+            public readonly StableValue<bool> OtherError = new StableValue<bool>();
 
             public void Interrupt()
             {
-                _status.Interrupt();
-                _outError.Interrupt();
-                _trashError.Interrupt();
-                _otherError.Interrupt();
-            }
-
-            public bool TryGetConfirmed(int machineId, out MachineReading reading)
-            {
-                reading = default;
-                if (_status.Confirmed is not LampStatus status || _outError.Confirmed is not bool outError
-                    || _trashError.Confirmed is not bool trashError || _otherError.Confirmed is not bool otherError)
-                    return false; // agent just started: not every signal confirmed yet
-                reading = new MachineReading(machineId, status, outError, trashError, otherError);
-                return true;
-            }
-
-            // Several signals confirmed in the same poll were first read less than one poll apart: keep the latest
-            private void Confirmed(DateTimeOffset? firstRead)
-            {
-                if (firstRead > ChangedAt)
-                    ChangedAt = firstRead.Value;
+                Status.Interrupt();
+                OutError.Interrupt();
+                TrashError.Interrupt();
+                OtherError.Interrupt();
             }
         }
 
@@ -111,35 +88,31 @@ namespace Kyoshin.Plc
             private DateTimeOffset _pendingSince;
             private bool _hasPending;
 
+            /// <summary>Last confirmed value (null until the first value has been read for the required time).</summary>
             public T? Confirmed { get; private set; }
 
-            /// <summary>
-            /// <paramref name="stableTime"/> is the time required for <paramref name="value"/> (ON or OFF).
-            /// Returns the time the value was first read when it has just been confirmed, otherwise null.
-            /// </summary>
-            public DateTimeOffset? Update(T value, DateTimeOffset now, TimeSpan stableTime)
+            public void Update(T value, DateTimeOffset now, TimeSpan requiredTime)
             {
                 var comparer = EqualityComparer<T>.Default;
                 if (Confirmed.HasValue && comparer.Equals(Confirmed.Value, value))
                 {
-                    _hasPending = false; // back to the confirmed value before the stable time: the pulse is ignored
-                    return null;
+                    _hasPending = false; // back to the confirmed value before the required time: the pulse is ignored
+                    return;
                 }
                 if (!_hasPending || !comparer.Equals(_pending, value))
                 {
-                    _pending = value;
+                    _pending = value;      // a new value: start timing it
                     _pendingSince = now;
                     _hasPending = true;
                 }
-                if (now - _pendingSince < stableTime)
-                    return null;
-
-                Confirmed = value;
-                _hasPending = false;
-                return _pendingSince;
+                if (now - _pendingSince >= requiredTime)
+                {
+                    Confirmed = value;     // read unchanged for the required time: confirmed now
+                    _hasPending = false;
+                }
             }
 
-            /// <summary>A poll was missed: a pending value has to be read again for the whole stable time.</summary>
+            /// <summary>A poll was missed: a pending value has to be read again for the whole required time.</summary>
             public void Interrupt() => _hasPending = false;
         }
     }

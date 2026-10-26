@@ -6,7 +6,7 @@ namespace KyoshinAgent
     /// <summary>
     /// Polls the inputs X of both FX stations (or the mock PLC) and queues every machine whose state changed.
     /// A change is queued only once it has been read unchanged for Plc:OnConfirmSeconds / OffConfirmSeconds, stamped with the time it was
-    /// first read (StableReadingFilter). After the agent starts, each machine's first confirmed state is queued
+    /// confirmed (StableReadingFilter). After the agent starts, each machine's first confirmed state is queued
     /// (a snapshot), so the server is always in sync. Machines of a station that does not answer are
     /// left out — the server keeps their last known state.
     /// </summary>
@@ -66,8 +66,11 @@ namespace KyoshinAgent
                 {
                     var readings = _mock != null ? ReadMock() : await ReadPlcAsync();
 
-                    var changed = _filter.Update(readings, DateTimeOffset.Now)
-                        .Where(c => !_lastQueued.TryGetValue(c.Reading.MachineId, out var previous) || previous != c.Reading)
+                    // A change is stamped with the time it is confirmed (read unchanged for the ON/OFF time)
+                    var now = DateTimeOffset.Now;
+                    var changed = _filter.Update(readings, now)
+                        .Where(r => !_lastQueued.TryGetValue(r.MachineId, out var previous) || previous != r)
+                        .Select(r => (Reading: r, Time: now))
                         .ToList();
                     if (changed.Count > 0)
                     {

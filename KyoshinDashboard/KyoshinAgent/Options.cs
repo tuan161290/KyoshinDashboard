@@ -12,7 +12,8 @@ namespace KyoshinAgent
 
         /// <summary>
         /// ON confirmation: an error signal turning on, or a machine changing to a lamp colour, must read the same
-        /// for this long before it is confirmed and sent (with the time it was first read). 0 = at once.
+        /// for this long before it is confirmed and sent, stamped with the confirmation time
+        /// (ON at 10:00:00, still ON at 10:00:03 → ON from 10:00:03). 0 = at once.
         /// </summary>
         public double? OnConfirmSeconds { get; set; }
 
