@@ -21,7 +21,7 @@ namespace KyoshinAgent
         public double? OffConfirmSeconds { get; set; }
 
         /// <summary>Older single setting for both directions, used when On/OffConfirmSeconds are not set.</summary>
-        public double StableSeconds { get; set; } = 3;
+        public double StableSeconds { get; set; } = 15;
 
         public double OnSeconds => OnConfirmSeconds ?? StableSeconds;
         public double OffSeconds => OffConfirmSeconds ?? StableSeconds;

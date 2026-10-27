@@ -8,7 +8,7 @@ Giám sát 48 máy trong xưởng qua PLC Mitsubishi FX. Mỗi máy có đèn th
 |---|---|
 | `KyoshinDashboard/KyoshinDashboard` | Web dashboard (ASP.NET Core 10, SignalR, SQLite), chạy thành service **KyoshinServer** ở cổng 5000 |
 | `KyoshinDashboard/KyoshinAgent` | Đọc PLC qua RS-485 (Computer Link, đọc thẳng đầu vào X), gửi về Server; chạy thành service **KyoshinAgent** |
-| `Kyoshin.Plc` | Thư viện dùng chung: giao thức FX, bảng địa chỉ I/O, bộ lọc tín hiệu ổn định (ON/OFF 3 s) |
+| `Kyoshin.Plc` | Thư viện dùng chung: giao thức FX, bảng địa chỉ I/O, bộ lọc tín hiệu ổn định (ON/OFF 15 s) |
 | `KyoshinDashboard/deploy/windows` | Script cài đặt, chạy thử và cập nhật trên máy Windows ở xưởng |
 
 Cả hai chương trình được đóng gói self-contained, nên máy ở xưởng không cần cài .NET.
@@ -76,7 +76,7 @@ Nhật ký cập nhật nằm ở `C:\Kyoshin\update.log`.
 | File | Mục | Ý nghĩa |
 |---|---|---|
 | `KyoshinAgent\appsettings.json` | `Plc:ComPort`, `Plc:UseMock` | Cổng COM; `true` = dữ liệu giả lập |
-| | `Plc:OnConfirmSeconds`, `Plc:OffConfirmSeconds` | Tín hiệu phải giữ nguyên bao lâu mới được xác nhận (mặc định 3 s) |
+| | `Plc:OnConfirmSeconds`, `Plc:OffConfirmSeconds` | Tín hiệu phải giữ nguyên bao lâu mới được xác nhận (mặc định 15 s) |
 | `KyoshinServer\appsettings.json` | `Kestrel:Endpoints:Http:Url` | Cổng web (mặc định 5000) |
 | | `DataSettings:RetentionDays` | Số ngày giữ log chi tiết; `0` = giữ hết (mặc định) |
 | | `Errors:OnlyWhenGreenOrYellow` | Chỉ ghi lỗi khi đèn Xanh/Vàng (mặc định `true`, như bản cũ) |

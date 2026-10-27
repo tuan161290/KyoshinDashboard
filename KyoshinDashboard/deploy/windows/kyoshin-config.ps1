@@ -71,7 +71,7 @@ try {
             $plc = (Read-Json $agentCfg).Plc
             $serverKey = (Read-Json $serverCfg).Ingest.ApiKey
             $agentKey = (Read-Json $agentCfg).Server.ApiKey
-            $stable = if ($null -ne $plc.StableSeconds) { $plc.StableSeconds } else { 3 }
+            $stable = if ($null -ne $plc.StableSeconds) { $plc.StableSeconds } else { 15 }
             $onSec = if ($null -ne $plc.OnConfirmSeconds) { $plc.OnConfirmSeconds } else { $stable }
             $offSec = if ($null -ne $plc.OffConfirmSeconds) { $plc.OffConfirmSeconds } else { $stable }
             $command = if ($plc.Command) { $plc.Command } else { 'WR' }
