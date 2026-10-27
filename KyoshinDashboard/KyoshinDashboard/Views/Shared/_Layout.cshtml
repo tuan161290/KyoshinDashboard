@@ -209,29 +209,30 @@
             return points;
         }
 
-        // Tooltip mode of the step charts: the change points within 6 px of the mouse, so a pulse narrower than a
-        // pixel is still found (Chart.js 'nearest' only looks at the two points around the mouse); otherwise the
-        // nearest point. Where the mouse is goes to chart.$hover for the tooltip text
-        const CHANGE_HIT_PX = 6;
-        Chart.Interaction.modes.changes = (chart, e, options, useFinalPosition) => {
-            const x = Chart.helpers.getRelativePosition(e, chart).x;
-            const items = [];
-            chart.getSortedVisibleDatasetMetas().forEach(meta => meta.data.forEach((element, index) => {
-                if (!element.skip && Math.abs(element.x - x) <= CHANGE_HIT_PX) items.push({ element, datasetIndex: meta.index, index });
-            }));
-            chart.$hover = { x, nearChange: items.length > 0 };
-            return items.length ? items : Chart.Interaction.modes.nearest(chart, e, { ...options, intersect: false, axis: 'x' }, useFinalPosition);
+        // Tooltip of the step charts: only the time under the mouse (like the original app), shown at the mouse —
+        // not snapped to a data point. Charts use interaction mode 'none' (no hover dots on the points); the tooltip
+        // mode 'mouseTime' hands it any one point so it appears, and the 'mouse' positioner records where the mouse is
+        Chart.Interaction.modes.none = () => [];
+        Chart.Interaction.modes.mouseTime = chart => {
+            const meta = chart.getDatasetMeta(0);
+            const index = meta.data.findIndex(el => !el.skip);
+            return index < 0 ? [] : [{ element: meta.data[index], datasetIndex: 0, index }];
         };
-
-        // Tooltip of the step charts: only a time (like the original app) — of each change near the mouse
-        // (a short pulse shows its start and end), otherwise the time under the mouse
+        Chart.Tooltip.positioners.mouse = function (items, eventPosition) {
+            this.chart.$mouseX = eventPosition.x;
+            return eventPosition;
+        };
         const clockText = t => new Date(t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const timeTooltip = {
+            mode: 'mouseTime',
+            position: 'mouse',
             displayColors: false,
-            filter: (item, i, items) => item.chart.$hover?.nearChange ? items.findIndex(o => o.parsed.x === item.parsed.x) === i : i === 0,
             callbacks: {
                 title: () => '',
-                label: ctx => clockText(ctx.chart.$hover?.nearChange ? ctx.parsed.x : ctx.chart.scales.x.getValueForPixel(ctx.chart.$hover.x))
+                label: ctx => {
+                    const x = ctx.chart.scales.x;
+                    return clockText(Math.min(Math.max(x.getValueForPixel(ctx.chart.$mouseX), x.min), x.max));
+                }
             }
         };
 
