@@ -188,6 +188,30 @@
     <script>
         // Error names (Models/ErrorNames.cs): ERROR_NAMES.out.short / .full, .trash, .other
         const ERROR_NAMES = @Json.Serialize(ErrorNames.ForScript());
+
+        // Error chart line (Dashboard, History): at OFF (0), up to ON (1) for each logged error, from xMin to
+        // lineEnd ("now" or the end of the range). An error still open stays up; errors ≤ 2 s apart are joined.
+        function errorLinePoints(timeline, errorKey, xMin, lineEnd) {
+            if (lineEnd <= xMin) return [];
+            const points = [{ x: new Date(xMin), y: 0 }];
+            timeline.forEach(t => {
+                if (!t[errorKey]) return;
+                const start = new Date(Math.max(new Date(t.start), xMin));
+                const end = new Date(t.open ? lineEnd : Math.min(new Date(t.end), lineEnd));
+                if (end <= start) return;
+                const prev = points[points.length - 1];
+                if (points.length > 1 && prev.y === 0 && start - prev.x <= 2000) points.pop();
+                else points.push({ x: start, y: 0 });
+                const seg = { segStart: start, segEnd: end };
+                points.push({ x: start, y: 1, ...seg }, { x: end, y: 1, ...seg });
+                if (!t.open) points.push({ x: end, y: 0 });
+            });
+            if (points[points.length - 1].y === 0) points.push({ x: new Date(lineEnd), y: 0 });
+            return points;
+        }
+
+        // y-axis afterBuildTicks: exactly these ticks (Chart.js drops a tick close to the axis min, e.g. OFF at 0)
+        const fixedTicks = (...values) => axis => { axis.ticks = values.map(value => ({ value })); };
     </script>
     @await RenderSectionAsync("Scripts", required: false)
     <script>

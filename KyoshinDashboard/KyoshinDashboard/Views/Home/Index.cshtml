@@ -115,23 +115,20 @@
     // === Chart color constants ===
     const CHART_COLORS = {
         green: '#2DA44E',
-        greenFill: 'rgba(45, 164, 78, 0.12)',
         yellow: '#C4820E',
-        yellowFill: 'rgba(196, 130, 14, 0.12)',
         red: '#C42B1C',
-        redFill: 'rgba(196, 43, 28, 0.12)',
         gray: '#8A8A8A',
-        grayFill: 'rgba(138, 138, 138, 0.08)',
         out: '#0F6CBD',
-        outFill: 'rgba(15, 108, 189, 0.12)',
         trash: '#C42B1C',
-        trashFill: 'rgba(196, 43, 28, 0.12)',
         other: '#8764B8',
-        otherFill: 'rgba(135, 100, 184, 0.12)',
+        line: '#37474F', // the one colour of the status line
         grid: 'rgba(0, 0, 0, 0.04)',
         text: '#616161',
         accent: '#005FB8'
     };
+
+    // Same y-axis width on every chart so the time axes line up vertically
+    const fixYAxisWidth = scale => { scale.width = 44; };
 
     // === Disable all Chart.js animations globally ===
     Chart.defaults.animation = false;
@@ -347,66 +344,43 @@
         }
 
         const statusY = { 'Green': 3, 'Yellow': 2, 'Red': 1, 'Off': 0 };
-        const statusKey = { 'Green': 0, 'Yellow': 1, 'Red': 2, 'Off': 3 };
         const statusNames = { 'Green': 'Chạy', 'Yellow': 'Chờ', 'Red': 'Dừng', 'Off': 'Tắt' };
-        const statusColors = { 'Green': CHART_COLORS.green, 'Yellow': CHART_COLORS.yellow, 'Red': CHART_COLORS.red, 'Off': CHART_COLORS.gray };
 
-        const datasets = [[], [], [], []];
-        const lastEndTime = [null, null, null, null];
-
-        const filteredTimeline = timeline.filter(t => {
-            const startD = new Date(t.start);
-            const endD = new Date(t.end);
-            return endD >= xMin && startD <= xMax;
-        });
-
-        filteredTimeline.forEach(t => {
-            const idx = statusKey[t.status];
-            if (idx === undefined) return;
+        // One line through all segments (like the original app): vertical at each change, broken over a gap > 2 s
+        const points = [];
+        let lastEnd = null;
+        timeline.forEach(t => {
             const yVal = statusY[t.status];
+            if (yVal === undefined) return;
             let startDate = new Date(t.start);
             let endDate = new Date(t.end);
+            if (endDate < xMin || startDate > xMax) return;
             if (startDate < xMin) startDate = new Date(xMin);
             if (endDate > xMax) endDate = new Date(xMax);
 
-            if (lastEndTime[idx] !== null && startDate.getTime() - lastEndTime[idx].getTime() > 2000) {
-                datasets[idx].push({ x: new Date(lastEndTime[idx]), y: NaN });
-            }
-
-            datasets[idx].push({ x: startDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
-            datasets[idx].push({ x: endDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
-            lastEndTime[idx] = endDate;
+            if (lastEnd !== null && startDate - lastEnd > 2000) points.push({ x: new Date(lastEnd), y: NaN });
+            points.push({ x: startDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
+            points.push({ x: endDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
+            lastEnd = endDate;
         });
 
         const lastEntry = timeline.length > 0 ? timeline[timeline.length - 1] : null;
         const currentStatus = lastEntry ? lastEntry.status : 'Off';
         const currentY = statusY[currentStatus] ?? 0;
-        const currentColor = statusColors[currentStatus] ?? CHART_COLORS.gray;
         const currentName = statusNames[currentStatus] ?? 'Tắt';
 
         const markerDs = {
             label: '▶ ' + currentName,
             data: [{ x: nowDate, y: currentY }],
-            borderColor: currentColor,
-            backgroundColor: currentColor,
-            pointRadius: 7,
+            borderColor: CHART_COLORS.line,
+            backgroundColor: CHART_COLORS.line,
+            pointRadius: 6,
             pointStyle: 'circle',
             pointBorderColor: '#fff',
             pointBorderWidth: 2,
             showLine: false,
             fill: false
         };
-
-        const makeDs = (label, data, color, fillColor) => ({
-            label, data,
-            borderColor: color,
-            backgroundColor: fillColor,
-            fill: true,
-            stepped: true,
-            spanGaps: false,
-            pointRadius: 0,
-            borderWidth: 2
-        });
 
         const nowLinePlugin = {
             id: 'nowLine',
@@ -420,7 +394,7 @@
                 ctx.save();
                 ctx.beginPath();
                 ctx.setLineDash([4, 4]);
-                ctx.strokeStyle = currentColor;
+                ctx.strokeStyle = CHART_COLORS.line;
                 ctx.lineWidth = 1.5;
                 ctx.globalAlpha = 0.6;
                 ctx.moveTo(xPixel, yScale.top);
@@ -429,7 +403,7 @@
 
                 ctx.setLineDash([]);
                 ctx.globalAlpha = 1;
-                ctx.fillStyle = currentColor;
+                ctx.fillStyle = CHART_COLORS.line;
                 ctx.font = 'bold 9px Inter, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.fillText('BÂY GIỜ', xPixel, yScale.top - 4);
@@ -440,13 +414,16 @@
         statusChart = new Chart(ctx, {
             type: 'line',
             data: {
-                datasets: [
-                    makeDs('Chạy',  datasets[0], CHART_COLORS.green, CHART_COLORS.greenFill),
-                    makeDs('Chờ',   datasets[1], CHART_COLORS.yellow, CHART_COLORS.yellowFill),
-                    makeDs('Dừng',  datasets[2], CHART_COLORS.red, CHART_COLORS.redFill),
-                    makeDs('Tắt',   datasets[3], CHART_COLORS.gray, CHART_COLORS.grayFill),
-                    markerDs
-                ]
+                datasets: [{
+                    label: 'Trạng thái',
+                    data: points,
+                    borderColor: CHART_COLORS.line,
+                    borderWidth: 2,
+                    fill: false,
+                    stepped: true,
+                    spanGaps: false,
+                    pointRadius: 0
+                }, markerDs]
             },
             plugins: [nowLinePlugin],
             options: {
@@ -455,10 +432,7 @@
                 animation: false,
                 interaction: { mode: 'nearest', intersect: false, axis: 'x' },
                 plugins: {
-                    legend: {
-                        display: true, position: 'top',
-                        labels: { color: CHART_COLORS.text, boxWidth: 12, font: { size: 10 }, padding: 8 }
-                    },
+                    legend: { display: false },
                     tooltip: {
                         callbacks: {
                             title: (items) => {
@@ -491,6 +465,8 @@
                     },
                     y: {
                         min: -0.3, max: 3.5,
+                        afterFit: fixYAxisWidth,
+                        afterBuildTicks: fixedTicks(0, 1, 2, 3),
                         ticks: {
                             color: CHART_COLORS.text, stepSize: 1, font: { size: 10 },
                             callback: v => { if (v >= 0 && v <= 3) return ['Tắt', 'Dừng', 'Chờ', 'Chạy'][v]; return ''; }
@@ -517,31 +493,7 @@
             xMax = new Date(now.getTime() + 60000);
         }
 
-        const points = [];
-        let lastEndDate = null;
-
-        const filtered = errorTimeline.filter(t => {
-            const s = new Date(t.start);
-            const e = new Date(t.end);
-            return e >= xMin && s <= xMax;
-        });
-
-        filtered.forEach(t => {
-            const errVal = t[errorKey] ? 1 : 0;
-            if (errVal === 0) return;
-            let startDate = new Date(t.start);
-            let endDate = new Date(t.end);
-            if (startDate < xMin) startDate = new Date(xMin);
-            if (endDate > xMax) endDate = new Date(xMax);
-
-            if (lastEndDate !== null && startDate.getTime() - lastEndDate.getTime() > 2000) {
-                points.push({ x: new Date(lastEndDate), y: NaN });
-            }
-
-            points.push({ x: startDate, y: errVal, segStart: startDate, segEnd: endDate });
-            points.push({ x: endDate, y: errVal, segStart: startDate, segEnd: endDate });
-            lastEndDate = endDate;
-        });
+        const points = errorLinePoints(errorTimeline, errorKey, xMin, now < xMax ? now : xMax);
 
         const chart = new Chart(ctx, {
             type: 'line',
@@ -550,20 +502,9 @@
                     label: label,
                     data: points,
                     borderColor: color,
-                    backgroundColor: color + '20',
-                    fill: { target: 1 },
-                    stepped: true,
-                    spanGaps: false,
-                    pointRadius: 0,
-                    borderWidth: 2
-                }, {
-                    label: 'OFF',
-                    data: [{ x: xMin, y: 0 }, { x: xMax, y: 0 }],
-                    borderColor: color + '40',
-                    borderWidth: 1,
-                    pointRadius: 0,
+                    borderWidth: 2,
                     fill: false,
-                    borderDash: []
+                    pointRadius: 0
                 }]
             },
             options: {
@@ -604,6 +545,8 @@
                     },
                     y: {
                         min: -0.1, max: 1.3,
+                        afterFit: fixYAxisWidth,
+                        afterBuildTicks: fixedTicks(0, 1),
                         ticks: {
                             color: CHART_COLORS.text, stepSize: 1, font: { size: 10 },
                             callback: v => v === 0 ? 'OFF' : v === 1 ? 'ON' : ''

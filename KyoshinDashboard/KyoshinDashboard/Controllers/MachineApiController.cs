@@ -108,6 +108,7 @@ namespace KyoshinDashboard.Controllers
                 {
                     start = FormatChartTime(clampedStart),
                     end = FormatChartTime(clampedEnd),
+                    open = e.EndTime == null, // still on: the chart line stays up at "now"
                     errorType = e.ErrorType.ToString(),
                     outError = e.ErrorType == ErrorType.Out ? 1 : 0,
                     trashError = e.ErrorType == ErrorType.Trash ? 1 : 0,

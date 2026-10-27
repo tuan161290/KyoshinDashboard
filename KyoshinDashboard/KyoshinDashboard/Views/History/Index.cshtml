@@ -14,6 +14,15 @@
             </select>
         </label>
         <label>Ngày: <input type="date" id="histDate" value="@ViewBag.Date" onchange="loadHistory()" /></label>
+        <label>Từ: <input type="time" id="histFrom" value="06:00" onchange="loadHistory()" /></label>
+        <label>Đến: <input type="time" id="histTo" value="06:00" onchange="loadHistory()" /></label>
+        <span class="range-btns">
+            <button type="button" class="range-btn" data-range="06:00-06:00">Cả ngày</button>
+            <button type="button" class="range-btn" data-range="06:00-14:00">Ca 1</button>
+            <button type="button" class="range-btn" data-range="14:00-22:00">Ca 2</button>
+            <button type="button" class="range-btn" data-range="22:00-06:00">Ca 3</button>
+        </span>
+        <span class="filter-error" id="histRangeError"></span>
     </div>
 </div>
 
@@ -114,11 +123,12 @@
 <script>
     // Chart color constants for light theme
     const C = {
-        green: '#3FB950', greenFill: 'rgba(63, 185, 80, 0.15)',
-        yellow: '#D4990A', yellowFill: 'rgba(212, 153, 10, 0.15)',
-        red: '#F85149', redFill: 'rgba(248, 81, 73, 0.15)',
-        gray: '#8B949E', grayFill: 'rgba(139, 148, 158, 0.10)',
+        green: '#3FB950',
+        yellow: '#D4990A',
+        red: '#F85149',
+        gray: '#8B949E',
         out: '#2F81F7', trash: '#F85149', other: '#A371F7',
+        line: '#37474F', // the one colour of the status line
         grid: 'rgba(0, 0, 0, 0.05)', text: '#656D76'
     };
 
@@ -143,7 +153,7 @@
         allCharts().forEach(c => { if (c !== chart) c.zoomScale('x', { min, max }, 'none'); });
     }
 
-    // Double-click any chart → whole day (06:00 – 06:00) on all charts
+    // Double-click any chart → back to the picked Từ – Đến range on all charts
     function resetTimeRange() {
         allCharts().forEach(c => c.resetZoom('none'));
     }
@@ -172,6 +182,46 @@
         return { start, end };
     }
 
+    // The Từ – Đến range shown on the charts, inside the production day (06:00 → 06:00 next day):
+    // a time before 06:00 is on the next calendar day, and Đến 06:00 is the end of the day. null = Đến not after Từ
+    function getViewRange() {
+        const day = getShiftRange();
+        const at = (value, isEnd) => {
+            const [h, m] = (value || '06:00').split(':').map(Number);
+            const d = new Date(day.start);
+            d.setHours(h, m, 0, 0);
+            if (h < 6 || (isEnd && h === 6 && m === 0)) d.setDate(d.getDate() + 1);
+            return d;
+        };
+        const start = at(document.getElementById('histFrom').value, false);
+        const end = at(document.getElementById('histTo').value, true);
+        return end > start ? { start, end } : null;
+    }
+
+    // Time ticks on round local times for the range on screen (also while zoomed): every 1, 2, 5 … 180 min, ≤ ~12 steps
+    const TICK_STEPS_MIN = [1, 2, 5, 10, 15, 30, 60, 120, 180];
+    function roundTimeTicks(axis) {
+        const spanMin = (axis.max - axis.min) / 60000;
+        const step = (TICK_STEPS_MIN.find(s => spanMin / s <= 12) ?? 180) * 60000;
+        const tz = new Date(axis.min).getTimezoneOffset() * 60000;
+        const ticks = [];
+        for (let t = Math.ceil((axis.min - tz) / step) * step + tz; t <= axis.max; t += step) ticks.push({ value: t });
+        axis.ticks = ticks;
+    }
+
+    // Time axis of the Từ – Đến range shown
+    function timeAxis(view) {
+        return {
+            type: 'time',
+            min: view.start,
+            max: view.end,
+            afterBuildTicks: roundTimeTicks,
+            time: { minUnit: 'minute', displayFormats: { minute: 'HH:mm', hour: 'HH:mm', day: 'HH:mm' }, tooltipFormat: 'HH:mm:ss' },
+            ticks: { color: C.text, font: { size: 10 } },
+            grid: { color: C.grid }
+        };
+    }
+
     // Factory local time as the API expects it: yyyy-MM-ddTHH:mm:ss (no time zone)
     function toLocalIso(d) {
         const p = n => String(n).padStart(2, '0');
@@ -191,16 +241,23 @@
     async function loadHistory() {
         const machineId = document.getElementById('histMachineId').value;
         const range = getShiftRange();
+        const from = document.getElementById('histFrom').value, to = document.getElementById('histTo').value;
+        document.querySelectorAll('.range-btn').forEach(b => b.classList.toggle('on', b.dataset.range === `${from}-${to}`));
+        const view = getViewRange();
+        document.getElementById('histRangeError').textContent =
+            view ? '' : 'Giờ "Đến" phải sau giờ "Từ" (ngày sản xuất 06:00 → 06:00 hôm sau)';
+        if (!view) return;
 
         try {
-            // Load chart data for the whole production day, 06:00 → 06:00 next day
+            // Load chart data for the whole production day, 06:00 → 06:00 next day (the shift table needs all of it)
             const chartResp = await fetch(`/api/machineapi/chart-data?machineId=${machineId}&from=${toLocalIso(range.start)}&to=${toLocalIso(range.end)}`);
             const chartData = await chartResp.json();
 
-            renderStatusChart(chartData.statusTimeline);
-            renderErrorTimeline('histOutChart', chartData.errorTimeline, 'outError', C.out, ERROR_NAMES.out.short);
-            renderErrorTimeline('histTrashChart', chartData.errorTimeline, 'trashError', C.trash, ERROR_NAMES.trash.short);
-            renderErrorTimeline('histOtherChart', chartData.errorTimeline, 'otherError', C.other, ERROR_NAMES.other.short);
+            renderStatusChart(chartData.statusTimeline, view);
+            renderErrorTimeline('histOutChart', chartData.errorTimeline, 'outError', C.out, ERROR_NAMES.out.short, view);
+            renderErrorTimeline('histTrashChart', chartData.errorTimeline, 'trashError', C.trash, ERROR_NAMES.trash.short, view);
+            renderErrorTimeline('histOtherChart', chartData.errorTimeline, 'otherError', C.other, ERROR_NAMES.other.short, view);
+            renderErrorLabels(chartData.errorTimeline, view);
 
             // Calculate per-shift statistics
             renderShiftStats(chartData.statusTimeline, chartData.errorTimeline);
@@ -313,15 +370,16 @@
                 ${pctCell(r.otherSec, base, C.other)}
             </tr>`;
         }).join('');
+    }
 
-        // Update error chart headings with total %
-        const TOTAL = TOTAL_SEC;
-        const outPct = TOTAL > 0 ? (totals.outSec / TOTAL * 100).toFixed(1) : '0.0';
-        const trashPct = TOTAL > 0 ? (totals.trashSec / TOTAL * 100).toFixed(1) : '0.0';
-        const otherPct = TOTAL > 0 ? (totals.otherSec / TOTAL * 100).toFixed(1) : '0.0';
-        document.getElementById('labelOut').innerHTML = `🔵 ${ERROR_NAMES.out.full} — <span style="color:${C.out}">${outPct}%</span>`;
-        document.getElementById('labelTrash').innerHTML = `🔴 ${ERROR_NAMES.trash.full} — <span style="color:${C.trash}">${trashPct}%</span>`;
-        document.getElementById('labelOther').innerHTML = `🟣 ${ERROR_NAMES.other.full} — <span style="color:${C.other}">${otherPct}%</span>`;
+    // Error chart headings: share of the Từ – Đến range shown
+    function renderErrorLabels(errorTimeline, view) {
+        const total = (view.end - view.start) / 1000;
+        const pctOf = key => (errorTimeline
+            .reduce((s, t) => s + (t[key] ? getOverlap(new Date(t.start), new Date(t.end), view.start, view.end) : 0), 0) / total * 100).toFixed(1);
+        document.getElementById('labelOut').innerHTML = `🔵 ${ERROR_NAMES.out.full} — <span style="color:${C.out}">${pctOf('outError')}%</span>`;
+        document.getElementById('labelTrash').innerHTML = `🔴 ${ERROR_NAMES.trash.full} — <span style="color:${C.trash}">${pctOf('trashError')}%</span>`;
+        document.getElementById('labelOther').innerHTML = `🟣 ${ERROR_NAMES.other.full} — <span style="color:${C.other}">${pctOf('otherError')}%</span>`;
     }
 
     // Get overlap in seconds between two time ranges
@@ -332,73 +390,55 @@
     }
 
     // === Status chart ===
-    function renderStatusChart(timeline) {
+    function renderStatusChart(timeline, view) {
         const ctx = document.getElementById('historyStatusChart').getContext('2d');
         if (histStatusChart) histStatusChart.destroy();
 
         const statusY = { 'Green': 3, 'Yellow': 2, 'Red': 1, 'Off': 0 };
-        const statusKey = { 'Green': 0, 'Yellow': 1, 'Red': 2, 'Off': 3 };
 
-        const datasets = [[], [], [], []];
-        const lastEndTime = [null, null, null, null];
+        // One line through all segments (like the original app): vertical at each change, broken over a gap > 2 s
+        const points = [];
+        let lastEnd = null;
 
-        // Calculate total seconds per status for legend percentages
-        let greenSec = 0, yellowSec = 0, redSec = 0, offSec = 0;
-        const TOTAL_SEC = 24 * 3600;
+        // Seconds per status inside the range shown, for the legend percentages
+        const seconds = { 'Green': 0, 'Yellow': 0, 'Red': 0, 'Off': 0 };
+        const TOTAL_SEC = (view.end - view.start) / 1000;
 
         timeline.forEach(t => {
-            const idx = statusKey[t.status];
-            if (idx === undefined) return;
             const yVal = statusY[t.status];
+            if (yVal === undefined) return;
             const startDate = new Date(t.start);
             const endDate = new Date(t.end);
+            seconds[t.status] += getOverlap(startDate, endDate, view.start, view.end);
 
-            // Accumulate duration
-            const dur = (endDate - startDate) / 1000;
-            if (t.status === 'Green') greenSec += dur;
-            else if (t.status === 'Yellow') yellowSec += dur;
-            else if (t.status === 'Red') redSec += dur;
-            else if (t.status === 'Off') offSec += dur;
-
-            if (lastEndTime[idx] !== null && lastEndTime[idx] < startDate) {
-                datasets[idx].push({ x: lastEndTime[idx], y: NaN });
-            }
-
-            datasets[idx].push({ x: startDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
-            datasets[idx].push({ x: endDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
-            lastEndTime[idx] = endDate;
+            if (lastEnd !== null && startDate - lastEnd > 2000) points.push({ x: lastEnd, y: NaN });
+            points.push({ x: startDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
+            points.push({ x: endDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
+            lastEnd = endDate;
         });
 
-        // Build percentage labels
-        const pctValues = [
-            (greenSec / TOTAL_SEC * 100).toFixed(1),
-            (yellowSec / TOTAL_SEC * 100).toFixed(1),
-            (redSec / TOTAL_SEC * 100).toFixed(1),
-            (offSec / TOTAL_SEC * 100).toFixed(1)
-        ];
-
-        const makeDs = (label, data, color, fillColor) => ({
-            label, data,
-            borderColor: color,
-            backgroundColor: fillColor,
-            fill: true,
-            stepped: true,
-            spanGaps: false,
-            pointRadius: 0,
-            borderWidth: 2
-        });
+        // Legend = text only (no colour boxes): share of the range shown per status
+        const legendItems = [['Green', 'Chạy', C.green], ['Yellow', 'Chờ', C.yellow], ['Red', 'Dừng', C.red], ['Off', 'Tắt', C.gray]]
+            .map(([status, name, color]) => ({
+                text: `${name} ${(seconds[status] / TOTAL_SEC * 100).toFixed(1)}%`,
+                fontColor: color, fillStyle: 'transparent', strokeStyle: 'transparent', lineWidth: 0
+            }));
 
         const shiftRange = getShiftRange();
 
         histStatusChart = new Chart(ctx, {
             type: 'line',
             data: {
-                datasets: [
-                    makeDs('Chạy',  datasets[0], C.green, C.greenFill),
-                    makeDs('Chờ',   datasets[1], C.yellow, C.yellowFill),
-                    makeDs('Dừng',  datasets[2], C.red, C.redFill),
-                    makeDs('Tắt',   datasets[3], C.gray, C.grayFill)
-                ]
+                datasets: [{
+                    label: 'Trạng thái',
+                    data: points,
+                    borderColor: C.line,
+                    borderWidth: 2,
+                    fill: false,
+                    stepped: true,
+                    spanGaps: false,
+                    pointRadius: 0
+                }]
             },
             options: {
                 responsive: true,
@@ -407,21 +447,8 @@
                 interaction: { mode: 'nearest', intersect: false, axis: 'x' },
                 plugins: {
                     legend: {
-                        display: true, position: 'top',
-                        labels: {
-                            color: C.text, boxWidth: 12, font: { size: 10 }, padding: 8,
-                            generateLabels: (chart) => {
-                                return chart.data.datasets.map((ds, i) => ({
-                                    text: `${ds.label} ${pctValues[i]}%`,
-                                    fontColor: ds.borderColor,
-                                    fillStyle: ds.backgroundColor,
-                                    strokeStyle: ds.borderColor,
-                                    lineWidth: 2,
-                                    hidden: !chart.isDatasetVisible(i),
-                                    datasetIndex: i
-                                }));
-                            }
-                        }
+                        display: true, position: 'top', onClick: null,
+                        labels: { boxWidth: 0, font: { size: 11 }, padding: 12, generateLabels: () => legendItems }
                     },
                     tooltip: {
                         callbacks: {
@@ -445,17 +472,11 @@
                     zoom: zoomOptions(shiftRange)
                 },
                 scales: {
-                    x: {
-                        type: 'time',
-                        min: shiftRange.start,
-                        max: shiftRange.end,
-                        time: { unit: 'hour', displayFormats: { hour: 'HH:mm', minute: 'HH:mm' }, tooltipFormat: 'HH:mm:ss' },
-                        ticks: { color: C.text, font: { size: 10 } },
-                        grid: { color: C.grid }
-                    },
+                    x: timeAxis(view),
                     y: {
                         min: -0.3, max: 3.5,
                         afterFit: fixYAxisWidth,
+                        afterBuildTicks: fixedTicks(0, 1, 2, 3),
                         ticks: {
                             color: C.text, stepSize: 1, font: { size: 10 },
                             callback: v => { if (v >= 0 && v <= 3) return ['Tắt', 'Dừng', 'Chờ', 'Chạy'][v]; return ''; }
@@ -468,30 +489,15 @@
     }
 
     // === Error timeline chart ===
-    function renderErrorTimeline(canvasId, errorTimeline, errorKey, color, label) {
+    function renderErrorTimeline(canvasId, errorTimeline, errorKey, color, label, view) {
         const ctx = document.getElementById(canvasId).getContext('2d');
         if (errorCharts[canvasId]) errorCharts[canvasId].destroy();
 
         const shiftRange = getShiftRange();
 
-        // Build {x, y} point data from segments
-        const points = [];
-        let lastEndDate = null;
-
-        errorTimeline.forEach(t => {
-            const errVal = t[errorKey] ? 1 : 0;
-            if (errVal === 0) return;
-            const startDate = new Date(t.start);
-            const endDate = new Date(t.end);
-
-            if (lastEndDate !== null && startDate.getTime() - lastEndDate.getTime() > 2000) {
-                points.push({ x: new Date(lastEndDate), y: NaN });
-            }
-
-            points.push({ x: startDate, y: errVal, segStart: startDate, segEnd: endDate });
-            points.push({ x: endDate, y: errVal, segStart: startDate, segEnd: endDate });
-            lastEndDate = endDate;
-        });
+        // The line ends at "now" when the day is still running
+        const now = new Date();
+        const points = errorLinePoints(errorTimeline, errorKey, shiftRange.start, now < shiftRange.end ? now : shiftRange.end);
 
         const chart = new Chart(ctx, {
             type: 'line',
@@ -500,20 +506,9 @@
                     label: label,
                     data: points,
                     borderColor: color,
-                    backgroundColor: color + '20',
-                    fill: { target: 1 },
-                    stepped: true,
-                    spanGaps: false,
-                    pointRadius: 0,
-                    borderWidth: 2
-                }, {
-                    label: 'OFF',
-                    data: [{ x: shiftRange.start, y: 0 }, { x: shiftRange.end, y: 0 }],
-                    borderColor: color + '40',
-                    borderWidth: 1,
-                    pointRadius: 0,
+                    borderWidth: 2,
                     fill: false,
-                    borderDash: []
+                    pointRadius: 0
                 }]
             },
             options: {
@@ -545,17 +540,11 @@
                     zoom: zoomOptions(shiftRange)
                 },
                 scales: {
-                    x: {
-                        type: 'time',
-                        min: shiftRange.start,
-                        max: shiftRange.end,
-                        time: { unit: 'hour', displayFormats: { hour: 'HH:mm', minute: 'HH:mm' }, tooltipFormat: 'HH:mm:ss' },
-                        ticks: { color: C.text, font: { size: 10 } },
-                        grid: { color: C.grid }
-                    },
+                    x: timeAxis(view),
                     y: {
                         min: -0.1, max: 1.3,
                         afterFit: fixYAxisWidth,
+                        afterBuildTicks: fixedTicks(0, 1),
                         ticks: {
                             color: C.text, stepSize: 1, font: { size: 10 },
                             callback: v => v === 0 ? 'OFF' : v === 1 ? 'ON' : ''
@@ -571,6 +560,14 @@
 
     ['historyStatusChart', 'histOutChart', 'histTrashChart', 'histOtherChart']
         .forEach(id => document.getElementById(id).addEventListener('dblclick', resetTimeRange));
+
+    // Quick ranges: whole day or one shift
+    document.querySelectorAll('.range-btn').forEach(b => b.addEventListener('click', () => {
+        const [from, to] = b.dataset.range.split('-');
+        document.getElementById('histFrom').value = from;
+        document.getElementById('histTo').value = to;
+        loadHistory();
+    }));
 
     // Initial load
     loadHistory();
