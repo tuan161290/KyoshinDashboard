@@ -122,10 +122,10 @@
         redFill: 'rgba(196, 43, 28, 0.12)',
         gray: '#8A8A8A',
         grayFill: 'rgba(138, 138, 138, 0.08)',
-        out: '#C42B1C',
-        outFill: 'rgba(196, 43, 28, 0.12)',
-        trash: '#D68000',
-        trashFill: 'rgba(214, 128, 0, 0.12)',
+        out: '#0F6CBD',
+        outFill: 'rgba(15, 108, 189, 0.12)',
+        trash: '#C42B1C',
+        trashFill: 'rgba(196, 43, 28, 0.12)',
         other: '#8764B8',
         otherFill: 'rgba(135, 100, 184, 0.12)',
         grid: 'rgba(0, 0, 0, 0.04)',
@@ -168,8 +168,8 @@
 
         const errorEl = document.getElementById(`error-${m.machineId}`);
         let dots = '';
-        if (m.hasOutError) dots += '<span style="width:8px;height:8px;border-radius:50%;background:#C42B1C;display:inline-block" title="' + ERROR_NAMES.out.full + '"></span>';
-        if (m.hasTrashError) dots += '<span style="width:8px;height:8px;border-radius:50%;background:#D68000;display:inline-block" title="' + ERROR_NAMES.trash.full + '"></span>';
+        if (m.hasOutError) dots += '<span style="width:8px;height:8px;border-radius:50%;background:#0F6CBD;display:inline-block" title="' + ERROR_NAMES.out.full + '"></span>';
+        if (m.hasTrashError) dots += '<span style="width:8px;height:8px;border-radius:50%;background:#C42B1C;display:inline-block" title="' + ERROR_NAMES.trash.full + '"></span>';
         if (m.hasOtherError) dots += '<span style="width:8px;height:8px;border-radius:50%;background:#8764B8;display:inline-block" title="' + ERROR_NAMES.other.full + '"></span>';
         errorEl.innerHTML = dots;
         errorEl.dataset.errorText = m.errorText || '';

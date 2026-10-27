@@ -33,6 +33,10 @@
     --red-bg: rgba(196, 43, 28, 0.18);
     --red-acrylic: rgba(196, 43, 28, 0.28);
     --red-border: rgba(196, 43, 28, 0.50);
+    --blue: #0F6CBD;
+    --blue-bg: rgba(15, 108, 189, 0.18);
+    --blue-acrylic: rgba(15, 108, 189, 0.28);
+    --blue-border: rgba(15, 108, 189, 0.50);
     --gray: #7A7A7A;
     --gray-bg: rgba(138, 138, 138, 0.14);
     --gray-acrylic: rgba(138, 138, 138, 0.14);
@@ -80,8 +84,8 @@
     --chart-red-fill: rgba(196, 43, 28, 0.12);
     --chart-gray: #8A8A8A;
     --chart-gray-fill: rgba(138, 138, 138, 0.08);
-    --chart-out: #C42B1C;
-    --chart-trash: #D68000;
+    --chart-out: #0F6CBD;
+    --chart-trash: #C42B1C;
     --chart-other: #8764B8;
     --chart-grid: rgba(0, 0, 0, 0.04);
     --chart-text: #616161;
@@ -680,13 +684,13 @@ h3:hover .chart-dot {
 }
 
 .dot-out {
-    background-color: var(--red);
-    box-shadow: 0 0 8px var(--red), 0 0 3px var(--red);
+    background-color: var(--blue);
+    box-shadow: 0 0 8px var(--blue), 0 0 3px var(--blue);
 }
 
 .dot-trash {
-    background-color: var(--yellow);
-    box-shadow: 0 0 8px var(--yellow), 0 0 3px var(--yellow);
+    background-color: var(--red);
+    box-shadow: 0 0 8px var(--red), 0 0 3px var(--red);
 }
 
 .dot-other {
@@ -872,13 +876,13 @@ h3:hover .chart-dot {
 }
 
 .error-item.error-out {
-    background: var(--red-bg);
-    border-left: 3px solid var(--red);
+    background: var(--blue-bg);
+    border-left: 3px solid var(--blue);
 }
 
 .error-item.error-trash {
-    background: var(--yellow-bg);
-    border-left: 3px solid var(--yellow);
+    background: var(--red-bg);
+    border-left: 3px solid var(--red);
 }
 
 .error-item.error-other {
@@ -1604,6 +1608,11 @@ h3:hover .chart-dot {
     box-shadow: 0 0 10px var(--green), 0 0 4px var(--green);
 }
 
+.dot-blue-glow {
+    background-color: var(--blue);
+    box-shadow: 0 0 10px var(--blue), 0 0 4px var(--blue);
+}
+
 .dot-purple-glow {
     background-color: #8764B8;
     box-shadow: 0 0 10px #8764B8, 0 0 4px #8764B8;
@@ -1656,6 +1665,14 @@ h3:hover .chart-dot {
 }
 .cell-red-active .io-cell-address {
     color: var(--red);
+}
+
+.cell-blue-active .io-grid-cell {
+    background: var(--blue-acrylic);
+    border-color: var(--blue-border);
+}
+.cell-blue-active .io-cell-address {
+    color: var(--blue);
 }
 
 .cell-purple-active .io-grid-cell {

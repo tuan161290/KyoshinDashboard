@@ -112,8 +112,8 @@
         yellow: '#D4990A', yellowFill: 'rgba(212, 153, 10, 0.55)',
         red: '#F85149', redFill: 'rgba(248, 81, 73, 0.55)',
         gray: '#8B949E', grayFill: 'rgba(139, 148, 158, 0.40)',
-        out: '#F85149', outFill: 'rgba(248, 81, 73, 0.55)',
-        trash: '#E3883E', trashFill: 'rgba(227, 136, 62, 0.55)',
+        out: '#2F81F7', outFill: 'rgba(47, 129, 247, 0.55)',
+        trash: '#F85149', trashFill: 'rgba(248, 81, 73, 0.55)',
         other: '#A371F7', otherFill: 'rgba(163, 113, 247, 0.55)',
         accent: '#0078D4', accentFill: 'rgba(0, 120, 212, 0.12)',
         grid: 'rgba(0, 0, 0, 0.05)', text: '#656D76'
@@ -355,8 +355,8 @@
             data: {
                 labels: trend.map(t => t.date),
                 datasets: [
-                    { label: ERROR_NAMES.out.short, data: trend.map(t => t.outErrors), borderColor: C.out, backgroundColor: 'rgba(248,81,73,0.08)', fill: true, tension: 0.3, pointRadius: 3 },
-                    { label: ERROR_NAMES.trash.short, data: trend.map(t => t.trashErrors), borderColor: C.trash, backgroundColor: 'rgba(227,136,62,0.08)', fill: true, tension: 0.3, pointRadius: 3 },
+                    { label: ERROR_NAMES.out.short, data: trend.map(t => t.outErrors), borderColor: C.out, backgroundColor: 'rgba(47,129,247,0.08)', fill: true, tension: 0.3, pointRadius: 3 },
+                    { label: ERROR_NAMES.trash.short, data: trend.map(t => t.trashErrors), borderColor: C.trash, backgroundColor: 'rgba(248,81,73,0.08)', fill: true, tension: 0.3, pointRadius: 3 },
                     { label: ERROR_NAMES.other.short, data: trend.map(t => t.otherErrors), borderColor: C.other, backgroundColor: 'rgba(163,113,247,0.08)', fill: true, tension: 0.3, pointRadius: 3 }
                 ]
             },

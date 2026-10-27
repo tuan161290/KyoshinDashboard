@@ -120,16 +120,16 @@
                     </td>
                     
                     <!-- Error block cells (X120~) -->
-                    <td id="cell-error-@i-0" class="io-cell col-error @(e0On ? "cell-red-active" : "")" data-active="@(e0On ? "true" : "false")" title="@FxIoMap.GetDescription(i, 0, FxIoBlock.Error) - Máy @i - @ErrorNames.Full(ErrorType.Out)">
+                    <td id="cell-error-@i-0" class="io-cell col-error @(e0On ? "cell-blue-active" : "")" data-active="@(e0On ? "true" : "false")" title="@FxIoMap.GetDescription(i, 0, FxIoBlock.Error) - Máy @i - @ErrorNames.Full(ErrorType.Out)">
                         <div class="io-grid-cell">
                             <span class="io-cell-address">@addrE0</span>
-                            <span class="io-dot @(e0On ? "dot-red-glow" : "dot-off")" id="io-error-@i-0"></span>
+                            <span class="io-dot @(e0On ? "dot-blue-glow" : "dot-off")" id="io-error-@i-0"></span>
                         </div>
                     </td>
-                    <td id="cell-error-@i-1" class="io-cell col-error @(e1On ? "cell-yellow-active" : "")" data-active="@(e1On ? "true" : "false")" title="@FxIoMap.GetDescription(i, 1, FxIoBlock.Error) - Máy @i - @ErrorNames.Full(ErrorType.Trash)">
+                    <td id="cell-error-@i-1" class="io-cell col-error @(e1On ? "cell-red-active" : "")" data-active="@(e1On ? "true" : "false")" title="@FxIoMap.GetDescription(i, 1, FxIoBlock.Error) - Máy @i - @ErrorNames.Full(ErrorType.Trash)">
                         <div class="io-grid-cell">
                             <span class="io-cell-address">@addrE1</span>
-                            <span class="io-dot @(e1On ? "dot-yellow-glow" : "dot-off")" id="io-error-@i-1"></span>
+                            <span class="io-dot @(e1On ? "dot-red-glow" : "dot-off")" id="io-error-@i-1"></span>
                         </div>
                     </td>
                     <td id="cell-error-@i-2" class="io-cell col-error @(e2On ? "cell-purple-active" : "")" data-active="@(e2On ? "true" : "false")" title="@FxIoMap.GetDescription(i, 2, FxIoBlock.Error) - Máy @i - @ErrorNames.Full(ErrorType.Other)">
@@ -199,8 +199,8 @@
         const trashDot = document.getElementById(`io-error-${m.machineId}-1`);
         const otherDot = document.getElementById(`io-error-${m.machineId}-2`);
 
-        if (outDot) setCellState(outDot, m.outSignal, 'dot-red-glow', 'cell-red-active');
-        if (trashDot) setCellState(trashDot, m.trashSignal, 'dot-yellow-glow', 'cell-yellow-active');
+        if (outDot) setCellState(outDot, m.outSignal, 'dot-blue-glow', 'cell-blue-active');
+        if (trashDot) setCellState(trashDot, m.trashSignal, 'dot-red-glow', 'cell-red-active');
         if (otherDot) setCellState(otherDot, m.otherSignal, 'dot-purple-glow', 'cell-purple-active');
     }
 

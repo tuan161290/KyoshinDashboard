@@ -97,8 +97,8 @@
                     <th style="color:#D4990A">% Chờ</th>
                     <th style="color:#CF222E">% Dừng</th>
                     <th style="color:#8B95A5">Tắt (phút)</th>
-                    <th style="color:#F85149" title="@ErrorNames.Full(ErrorType.Out)">% @ErrorNames.Short(ErrorType.Out)</th>
-                    <th style="color:#E3883E" title="@ErrorNames.Full(ErrorType.Trash)">% @ErrorNames.Short(ErrorType.Trash)</th>
+                    <th style="color:#2F81F7" title="@ErrorNames.Full(ErrorType.Out)">% @ErrorNames.Short(ErrorType.Out)</th>
+                    <th style="color:#F85149" title="@ErrorNames.Full(ErrorType.Trash)">% @ErrorNames.Short(ErrorType.Trash)</th>
                     <th style="color:#A371F7" title="@ErrorNames.Full(ErrorType.Other)">% @ErrorNames.Short(ErrorType.Other)</th>
                 </tr>
             </thead>
@@ -118,7 +118,7 @@
         yellow: '#D4990A', yellowFill: 'rgba(212, 153, 10, 0.15)',
         red: '#F85149', redFill: 'rgba(248, 81, 73, 0.15)',
         gray: '#8B949E', grayFill: 'rgba(139, 148, 158, 0.10)',
-        out: '#F85149', trash: '#E3883E', other: '#A371F7',
+        out: '#2F81F7', trash: '#F85149', other: '#A371F7',
         grid: 'rgba(0, 0, 0, 0.05)', text: '#656D76'
     };
 
@@ -319,8 +319,8 @@
         const outPct = TOTAL > 0 ? (totals.outSec / TOTAL * 100).toFixed(1) : '0.0';
         const trashPct = TOTAL > 0 ? (totals.trashSec / TOTAL * 100).toFixed(1) : '0.0';
         const otherPct = TOTAL > 0 ? (totals.otherSec / TOTAL * 100).toFixed(1) : '0.0';
-        document.getElementById('labelOut').innerHTML = `🔴 ${ERROR_NAMES.out.full} — <span style="color:${C.out}">${outPct}%</span>`;
-        document.getElementById('labelTrash').innerHTML = `🟠 ${ERROR_NAMES.trash.full} — <span style="color:${C.trash}">${trashPct}%</span>`;
+        document.getElementById('labelOut').innerHTML = `🔵 ${ERROR_NAMES.out.full} — <span style="color:${C.out}">${outPct}%</span>`;
+        document.getElementById('labelTrash').innerHTML = `🔴 ${ERROR_NAMES.trash.full} — <span style="color:${C.trash}">${trashPct}%</span>`;
         document.getElementById('labelOther').innerHTML = `🟣 ${ERROR_NAMES.other.full} — <span style="color:${C.other}">${otherPct}%</span>`;
     }
 
