@@ -41,10 +41,25 @@
     .report-note { font-size: 12px; color: var(--text-muted); }
     .report-error { color: var(--red); font-weight: 600; }
     .report-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 16px; align-items: start; }
-    .report-layout h3 { font-size: 14px; font-weight: 600; color: var(--text-secondary); margin: 0 0 10px; }
+    .report-card {
+        background: var(--bg-card); border: 1px solid var(--border-card);
+        border-radius: var(--radius-card); box-shadow: var(--shadow-card); overflow: hidden;
+    }
+    .report-card-head {
+        display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px;
+        padding: 12px 16px; border-bottom: 1px solid var(--border);
+    }
+    .report-card-head h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); margin: 0; }
+    .report-sub { font-size: 12px; color: var(--text-muted); }
+    .report-table-scroll { overflow-x: auto; }
+    .report-table th { white-space: nowrap; }
+    .report-table th:first-child, .report-table td:first-child { text-align: left; padding-left: 16px; }
+    .report-table td.num { text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    /* the shared .data-table th colour would win over a plain .c-green */
+    .report-table th.c-green { color: var(--green); } .report-table th.c-yellow { color: var(--yellow); }
+    .report-table th.c-red { color: var(--red); } .report-table th.c-gray { color: var(--gray); }
     #summaryBody tr { cursor: pointer; }
     #summaryBody tr.selected td { background: var(--accent-bg); }
-    .data-table td.num, .data-table th.num { text-align: right; white-space: nowrap; }
     .data-table tr.avg-row td { border-top: 2px solid var(--border-strong); font-weight: 700; }
     .data-table tr.no-rate td { color: var(--text-muted); }
     .break-input {
@@ -91,37 +106,47 @@
 </div>
 
 <div class="report-layout" id="reportResult" style="display:none">
-    <div class="history-table-wrapper">
-        <h3>Tổng hợp theo máy (trung bình các ngày)</h3>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Máy</th>
-                    <th class="num">Số ngày</th>
-                    <th class="num c-green">Chạy %</th>
-                    <th class="num c-yellow">Chờ %</th>
-                    <th class="num c-red">Dừng %</th>
-                    <th class="num c-gray">Tắt (phút)</th>
-                </tr>
-            </thead>
-            <tbody id="summaryBody"></tbody>
-        </table>
+    <div class="report-card">
+        <div class="report-card-head">
+            <h3>Tổng hợp theo máy</h3>
+            <span class="report-sub">Trung bình các ngày · bấm vào một máy để xem chi tiết</span>
+        </div>
+        <div class="report-table-scroll">
+            <table class="data-table report-table">
+                <thead>
+                    <tr>
+                        <th>Máy</th>
+                        <th>Số ngày</th>
+                        <th class="c-green">Chạy %</th>
+                        <th class="c-yellow">Chờ %</th>
+                        <th class="c-red">Dừng %</th>
+                        <th class="c-gray">Tắt (phút)</th>
+                    </tr>
+                </thead>
+                <tbody id="summaryBody"></tbody>
+            </table>
+        </div>
     </div>
-    <div class="history-table-wrapper">
-        <h3 id="detailTitle">Chi tiết</h3>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Ngày</th>
-                    <th class="num">Nghỉ (phút)</th>
-                    <th class="num c-green">Chạy (Run)</th>
-                    <th class="num c-yellow">Chờ (Wait)</th>
-                    <th class="num c-red">Dừng (Stop)</th>
-                    <th class="num c-gray">Tắt (phút)</th>
-                </tr>
-            </thead>
-            <tbody id="detailBody"></tbody>
-        </table>
+    <div class="report-card">
+        <div class="report-card-head">
+            <h3 id="detailTitle">Chi tiết</h3>
+            <span class="report-sub" id="detailSub"></span>
+        </div>
+        <div class="report-table-scroll">
+            <table class="data-table report-table">
+                <thead>
+                    <tr>
+                        <th>Ngày</th>
+                        <th>Nghỉ (phút)</th>
+                        <th class="c-green">Chạy (Run)</th>
+                        <th class="c-yellow">Chờ (Wait)</th>
+                        <th class="c-red">Dừng (Stop)</th>
+                        <th class="c-gray">Tắt (phút)</th>
+                    </tr>
+                </thead>
+                <tbody id="detailBody"></tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -145,12 +170,44 @@
             box.appendChild(b);
         }
         document.getElementById('pickedCount').textContent = `Đã chọn ${picked.size}/${TOTAL_MACHINES} máy`;
+        saveFilters();
     }
 
     function pickMachines(test) {
         picked.clear();
         for (let id = 1; id <= TOTAL_MACHINES; id++) if (test(id)) picked.add(id);
         renderPicker();
+    }
+
+    // ── Filters are kept for this browser tab, so they survive switching to another page and back ──
+    const FILTER_KEY = 'kyoshin.report.filters';
+    const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+    function saveFilters() {
+        try {
+            sessionStorage.setItem(FILTER_KEY, JSON.stringify({
+                from: document.getElementById('fromDate').value,
+                to: document.getElementById('toDate').value,
+                shifts: [...document.querySelectorAll('.shift-check:checked')].map(c => c.value),
+                defaultBreak: document.getElementById('defaultBreak').value,
+                machines: [...picked]
+            }));
+        } catch { } // storage blocked: the page still works, it just starts from the defaults next time
+    }
+
+    function restoreFilters() {
+        let f = null;
+        try { f = JSON.parse(sessionStorage.getItem(FILTER_KEY)); } catch { }
+        if (!f) return;
+        if (ISO_DATE.test(f.from)) document.getElementById('fromDate').value = f.from;
+        if (ISO_DATE.test(f.to)) document.getElementById('toDate').value = f.to;
+        if (Array.isArray(f.shifts))
+            document.querySelectorAll('.shift-check').forEach(c => c.checked = f.shifts.includes(c.value));
+        if (f.defaultBreak !== undefined) document.getElementById('defaultBreak').value = f.defaultBreak;
+        if (Array.isArray(f.machines)) {
+            picked.clear();
+            f.machines.filter(id => Number.isInteger(id) && id >= 1 && id <= TOTAL_MACHINES).forEach(id => picked.add(id));
+        }
     }
 
     // ── Rates (same formula as the server, Models/ProductionRate.cs) ──
@@ -251,9 +308,8 @@
         const body = document.getElementById('detailBody');
         const m = report.machines.find(x => x.machineId === selectedMachine);
         const shiftText = report.shifts.length === 3 ? 'cả ngày' : report.shifts.map(s => 'Ca ' + s).join(', ');
-        document.getElementById('detailTitle').textContent = m
-            ? `Chi tiết máy ${m.name} (${fmtDate(report.from)} – ${fmtDate(report.to)}, ${shiftText})`
-            : 'Chi tiết';
+        document.getElementById('detailTitle').textContent = m ? `Chi tiết máy ${m.name}` : 'Chi tiết';
+        document.getElementById('detailSub').textContent = `${fmtDate(report.from)} – ${fmtDate(report.to)} · ${shiftText}`;
         if (!m || m.days.length === 0) {
             body.innerHTML = '<tr><td colspan="6" class="empty-row">Không có dữ liệu trong khoảng đã chọn</td></tr>';
             return;
@@ -326,7 +382,10 @@
 
     // Changing the default break re-applies it to the days not edited by hand
     document.getElementById('defaultBreak').addEventListener('change', () => { if (report) render(); });
+    // Dates, shifts and the default break (the machine picker saves in renderPicker)
+    document.querySelector('.report-filters').addEventListener('change', saveFilters);
 
+    restoreFilters();
     renderPicker();
     loadReport();
 </script>
