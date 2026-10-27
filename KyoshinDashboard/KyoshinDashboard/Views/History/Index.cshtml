@@ -14,8 +14,8 @@
             </select>
         </label>
         <label>Ngày: <input type="date" id="histDate" value="@ViewBag.Date" onchange="loadHistory()" /></label>
-        <label>Từ: <input type="time" id="histFrom" value="06:00" onchange="loadHistory()" /></label>
-        <label>Đến: <input type="time" id="histTo" value="06:00" onchange="loadHistory()" /></label>
+        <label>Từ: <span class="time24"><select id="histFromH" onchange="loadHistory()"></select>:<select id="histFromM" onchange="loadHistory()"></select></span></label>
+        <label>Đến: <span class="time24"><select id="histToH" onchange="loadHistory()"></select>:<select id="histToM" onchange="loadHistory()"></select></span></label>
         <span class="range-btns">
             <button type="button" class="range-btn" data-range="06:00-06:00">Cả ngày</button>
             <button type="button" class="range-btn" data-range="06:00-14:00">Ca 1</button>
@@ -183,6 +183,27 @@
         return { start, end };
     }
 
+    // 24-hour time pickers: hour 00–23 : minute 00–59 (the browser's own time input follows the Windows language
+    // and may show AM/PM). Value "HH:mm"; the picker of id X is the selects XH and XM
+    const pad2 = n => String(n).padStart(2, '0');
+    ['histFrom', 'histTo'].forEach(id => {
+        document.getElementById(id + 'H').innerHTML = Array.from({ length: 24 }, (_, h) => `<option>${pad2(h)}</option>`).join('');
+        document.getElementById(id + 'M').innerHTML = Array.from({ length: 60 }, (_, m) => `<option>${pad2(m)}</option>`).join('');
+        setTime24(id, '06:00');
+    });
+
+    function getTime24(id) {
+        return document.getElementById(id + 'H').value + ':' + document.getElementById(id + 'M').value;
+    }
+
+    // An invalid value (e.g. a broken saved state) leaves the picker as it was
+    function setTime24(id, value) {
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value ?? '')) return;
+        const [h, m] = value.split(':');
+        document.getElementById(id + 'H').value = h;
+        document.getElementById(id + 'M').value = m;
+    }
+
     // The Từ – Đến range shown on the charts, inside the production day (06:00 → 06:00 next day):
     // a time before 06:00 is on the next calendar day, and Đến 06:00 is the end of the day. null = Đến not after Từ
     function getViewRange() {
@@ -194,8 +215,8 @@
             if (h < 6 || (isEnd && h === 6 && m === 0)) d.setDate(d.getDate() + 1);
             return d;
         };
-        const start = at(document.getElementById('histFrom').value, false);
-        const end = at(document.getElementById('histTo').value, true);
+        const start = at(getTime24('histFrom'), false);
+        const end = at(getTime24('histTo'), true);
         return end > start ? { start, end } : null;
     }
 
@@ -242,7 +263,7 @@
     async function loadHistory() {
         const machineId = document.getElementById('histMachineId').value;
         const range = getShiftRange();
-        const from = document.getElementById('histFrom').value, to = document.getElementById('histTo').value;
+        const from = getTime24('histFrom'), to = getTime24('histTo');
         historyState.save({ machineId, date: document.getElementById('histDate').value, from, to });
         document.querySelectorAll('.range-btn').forEach(b => b.classList.toggle('on', b.dataset.range === `${from}-${to}`));
         const view = getViewRange();
@@ -566,8 +587,8 @@
     // Quick ranges: whole day or one shift
     document.querySelectorAll('.range-btn').forEach(b => b.addEventListener('click', () => {
         const [from, to] = b.dataset.range.split('-');
-        document.getElementById('histFrom').value = from;
-        document.getElementById('histTo').value = to;
+        setTime24('histFrom', from);
+        setTime24('histTo', to);
         loadHistory();
     }));
 
@@ -575,8 +596,8 @@
     const saved = historyState.get();
     restoreControl('histMachineId', saved.machineId);
     restoreControl('histDate', saved.date);
-    restoreControl('histFrom', saved.from);
-    restoreControl('histTo', saved.to);
+    setTime24('histFrom', saved.from);
+    setTime24('histTo', saved.to);
     loadHistory();
 </script>
 }

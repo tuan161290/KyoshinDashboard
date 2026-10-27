@@ -755,7 +755,6 @@ h3:hover .chart-dot {
 .chart-controls input[type="date"],
 .chart-controls select,
 .filter-controls input[type="date"],
-.filter-controls input[type="time"],
 .filter-controls select {
     background: var(--bg-input);
     border: 1px solid var(--border);
@@ -771,7 +770,6 @@ h3:hover .chart-dot {
 .chart-controls input[type="date"]:focus,
 .chart-controls select:focus,
 .filter-controls input[type="date"]:focus,
-.filter-controls input[type="time"]:focus,
 .filter-controls select:focus {
     outline: none;
     border-color: var(--accent);
@@ -990,6 +988,17 @@ h3:hover .chart-dot {
     align-items: center;
     font-size: 13px;
     color: var(--text-secondary);
+}
+
+/* 24-hour time picker (History Từ / Đến): hour select : minute select */
+.time24 {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.filter-controls .time24 select {
+    padding: 6px 4px;
 }
 
 /* Quick range buttons (History: Cả ngày / Ca 1 / Ca 2 / Ca 3) */
