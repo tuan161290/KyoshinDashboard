@@ -212,6 +212,32 @@
 
         // y-axis afterBuildTicks: exactly these ticks (Chart.js drops a tick close to the axis min, e.g. OFF at 0)
         const fixedTicks = (...values) => axis => { axis.ticks = values.map(value => ({ value })); };
+
+        // A page's selections kept for this browser tab (sessionStorage), so they survive switching pages.
+        // Values given in the URL (?machineId=…&date=…) win over the saved ones.
+        function pageState(name) {
+            const key = 'kyoshin.' + name;
+            const url = new URLSearchParams(location.search);
+            return {
+                get() {
+                    let saved = null;
+                    try { saved = JSON.parse(sessionStorage.getItem(key)); } catch { }
+                    const result = saved && typeof saved === 'object' ? saved : {};
+                    url.forEach((_, k) => delete result[k]);
+                    return result;
+                },
+                save(value) { try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { } }
+            };
+        }
+
+        // Put a saved value back into an input/select; an unknown or invalid value leaves the control as it was
+        function restoreControl(id, value) {
+            const el = document.getElementById(id);
+            if (!el || value === undefined || value === null) return;
+            const before = el.value;
+            el.value = value;
+            if (el.value !== String(value)) el.value = before;
+        }
     </script>
     @await RenderSectionAsync("Scripts", required: false)
     <script>

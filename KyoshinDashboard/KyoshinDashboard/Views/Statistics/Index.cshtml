@@ -6,7 +6,7 @@
     <h1>📈 Thống kê hiệu suất</h1>
     <span style="font-size:12px; color:var(--text-muted)">Hiệu suất = Chạy ÷ (Chạy + Chờ + Dừng), không tính thời gian Tắt máy</span>
     <div class="filter-controls">
-        <label>Ngày: <input type="date" id="statDate" value="@ViewBag.Date" onchange="loadStats()" /></label>
+        <label>Ngày: <input type="date" id="statDate" value="@ViewBag.Date" onchange="loadPeriodStats()" /></label>
         <label>Ca:
             <select id="statShift" onchange="loadStats()">
                 <option value="1" selected="@(ViewBag.Shift == 1)">Ca 1 (06:00-14:00)</option>
@@ -121,6 +121,14 @@
 
     let effChart, pieChart, errChart;
     let trendEffC, trendStatusC, trendErrC;
+
+    // Day, shift and period kept when switching pages
+    const statsState = pageState('statistics');
+    document.querySelector('.filter-controls').addEventListener('change', () => statsState.save({
+        date: document.getElementById('statDate').value,
+        shift: document.getElementById('statShift').value,
+        period: document.getElementById('statPeriod').value
+    }));
 
     // ===== Shift Stats =====
     async function loadStats() {
@@ -393,7 +401,11 @@
         `).join('');
     }
 
-    // Initial load
-    loadStats();
+    // Initial load with the saved selections (the period loader also shows the day/shift view)
+    const saved = statsState.get();
+    restoreControl('statDate', saved.date);
+    restoreControl('statShift', saved.shift);
+    restoreControl('statPeriod', saved.period);
+    loadPeriodStats();
 </script>
 }

@@ -160,7 +160,8 @@
     function updateMachineCell(m) {
         const cell = document.getElementById(`machine-${m.machineId}`);
         if (!cell) return;
-        cell.className = `machine-cell ${m.statusCssClass}`;
+        // keep the outline of the machine shown in the charts
+        cell.className = `machine-cell ${m.statusCssClass}${m.machineId === selectedMachineId ? ' selected' : ''}`;
         document.getElementById(`status-text-${m.machineId}`).textContent = m.statusText;
 
         const errorEl = document.getElementById(`error-${m.machineId}`);
@@ -292,8 +293,14 @@
     let selectedMachineId = null;
     let statusChart, outChart, trashChart, otherChart;
 
+    // Selected machine and chart range kept when switching pages
+    const dashboardState = pageState('dashboard');
+    const saveDashboard = () => dashboardState.save({ machineId: selectedMachineId, range: document.getElementById('chartRange').value });
+    document.getElementById('chartRange').addEventListener('change', saveDashboard);
+
     function selectMachine(id) {
         selectedMachineId = id;
+        saveDashboard();
         document.querySelectorAll('.machine-cell').forEach(c => c.classList.remove('selected'));
         document.getElementById(`machine-${id}`).classList.add('selected');
 
@@ -608,6 +615,11 @@
     setInterval(() => {
         if (selectedMachineId && !isHoveringChart) loadChartData();
     }, 2000);
+
+    // Back on the Dashboard: the same range and machine as before switching pages
+    const savedDashboard = dashboardState.get();
+    restoreControl('chartRange', savedDashboard.range);
+    if (document.getElementById(`machine-${savedDashboard.machineId}`)) selectMachine(savedDashboard.machineId);
 
 </script>
 }

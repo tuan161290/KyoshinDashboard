@@ -17,9 +17,9 @@
     <div class="io-filter-group">
         <!-- Tab selector -->
         <div class="io-tabs">
-            <button class="io-tab-btn active" onclick="filterPlcType('all', this)">Tất cả (@(FxIoMap.TOTAL_MACHINES * 6))</button>
-            <button class="io-tab-btn" onclick="filterPlcType('status', this)">Trạng thái - X000 (@(FxIoMap.TOTAL_MACHINES * 3))</button>
-            <button class="io-tab-btn" onclick="filterPlcType('error', this)">Báo lỗi - X120 (@(FxIoMap.TOTAL_MACHINES * 3))</button>
+            <button class="io-tab-btn active" data-type="all" onclick="filterPlcType('all', this)">Tất cả (@(FxIoMap.TOTAL_MACHINES * 6))</button>
+            <button class="io-tab-btn" data-type="status" onclick="filterPlcType('status', this)">Trạng thái - X000 (@(FxIoMap.TOTAL_MACHINES * 3))</button>
+            <button class="io-tab-btn" data-type="error" onclick="filterPlcType('error', this)">Báo lỗi - X120 (@(FxIoMap.TOTAL_MACHINES * 3))</button>
         </div>
     </div>
 </div>
@@ -148,6 +148,15 @@
 <script>
     let currentPlcFilter = 'all';
 
+    // Tab, station, ON/OFF filter and search kept when switching pages
+    const ioState = pageState('io');
+    const saveIoFilters = () => ioState.save({
+        type: currentPlcFilter,
+        station: document.getElementById('ioStationFilter').value,
+        state: document.getElementById('ioStateFilter').value,
+        search: document.getElementById('ioSearchInput').value
+    });
+
     // === SignalR Live Connection ===
     const hubConn = window.machineConnection;
 
@@ -207,7 +216,8 @@
     // === Client-side Filtering & Searching ===
     function filterPlcType(type, btn) {
         currentPlcFilter = type;
-        
+        saveIoFilters();
+
         // Update active tab button style
         document.querySelectorAll('.io-tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
@@ -318,5 +328,16 @@
             tbody.appendChild(emptyRow);
         }
     }
+
+    document.querySelector('.io-toolbar').addEventListener('input', saveIoFilters);
+    document.querySelector('.io-toolbar').addEventListener('change', saveIoFilters);
+
+    // Back on this page: the filters picked before switching pages
+    const savedIo = ioState.get();
+    restoreControl('ioStationFilter', savedIo.station);
+    restoreControl('ioStateFilter', savedIo.state);
+    restoreControl('ioSearchInput', savedIo.search);
+    const savedTab = document.querySelector(`.io-tab-btn[data-type="${savedIo.type}"]`);
+    if (savedTab) filterPlcType(savedIo.type, savedTab); else filterIoTable();
 </script>
 }

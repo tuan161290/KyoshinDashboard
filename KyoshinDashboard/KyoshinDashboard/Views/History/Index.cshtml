@@ -138,6 +138,7 @@
 
     let histStatusChart;
     const errorCharts = {}; // canvas id → Chart
+    const historyState = pageState('history');
 
     // Same y-axis width on every chart so the time axes line up vertically
     const Y_AXIS_WIDTH = 48;
@@ -242,6 +243,7 @@
         const machineId = document.getElementById('histMachineId').value;
         const range = getShiftRange();
         const from = document.getElementById('histFrom').value, to = document.getElementById('histTo').value;
+        historyState.save({ machineId, date: document.getElementById('histDate').value, from, to });
         document.querySelectorAll('.range-btn').forEach(b => b.classList.toggle('on', b.dataset.range === `${from}-${to}`));
         const view = getViewRange();
         document.getElementById('histRangeError').textContent =
@@ -569,7 +571,12 @@
         loadHistory();
     }));
 
-    // Initial load
+    // Initial load, with the machine, day and Từ – Đến picked before switching pages
+    const saved = historyState.get();
+    restoreControl('histMachineId', saved.machineId);
+    restoreControl('histDate', saved.date);
+    restoreControl('histFrom', saved.from);
+    restoreControl('histTo', saved.to);
     loadHistory();
 </script>
 }
