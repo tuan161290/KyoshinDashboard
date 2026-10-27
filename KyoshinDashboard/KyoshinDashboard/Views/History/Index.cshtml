@@ -435,8 +435,8 @@
             seconds[t.status] += getOverlap(startDate, endDate, view.start, view.end);
 
             if (lastEnd !== null && startDate - lastEnd > 2000) points.push({ x: lastEnd, y: NaN });
-            points.push({ x: startDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
-            points.push({ x: endDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
+            points.push({ x: startDate, y: yVal });
+            points.push({ x: endDate, y: yVal });
             lastEnd = endDate;
         });
 
@@ -467,20 +467,13 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
-                interaction: { mode: 'segments' },
+                interaction: { mode: 'changes' },
                 plugins: {
                     legend: {
                         display: true, position: 'top', onClick: null,
                         labels: { boxWidth: 0, font: { size: 11 }, padding: 12, generateLabels: () => legendItems }
                     },
-                    tooltip: {
-                        filter: oneLinePerSegment,
-                        displayColors: false,
-                        callbacks: {
-                            title: () => '',
-                            label: ctx => segmentText({ 'Green': 'CHẠY', 'Yellow': 'CHỜ', 'Red': 'DỪNG', 'Off': 'TẮT' }[ctx.raw.segStatus], ctx.raw)
-                        }
-                    },
+                    tooltip: timeTooltip,
                     zoom: zoomOptions(shiftRange)
                 },
                 scales: {
@@ -527,17 +520,10 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
-                interaction: { mode: 'segments' },
+                interaction: { mode: 'changes' },
                 plugins: {
                     legend: { display: false },
-                    tooltip: {
-                        filter: oneLinePerSegment,
-                        displayColors: false,
-                        callbacks: {
-                            title: () => '',
-                            label: ctx => segmentText(label + ' ON', ctx.raw)
-                        }
-                    },
+                    tooltip: timeTooltip,
                     zoom: zoomOptions(shiftRange)
                 },
                 scales: {

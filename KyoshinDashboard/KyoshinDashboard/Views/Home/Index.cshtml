@@ -366,8 +366,8 @@
             if (endDate > xMax) endDate = new Date(xMax);
 
             if (lastEnd !== null && startDate - lastEnd > 2000) points.push({ x: new Date(lastEnd), y: NaN });
-            points.push({ x: startDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
-            points.push({ x: endDate, y: yVal, segStart: startDate, segEnd: endDate, segStatus: t.status });
+            points.push({ x: startDate, y: yVal });
+            points.push({ x: endDate, y: yVal });
             lastEnd = endDate;
         });
 
@@ -437,17 +437,10 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
-                interaction: { mode: 'segments' },
+                interaction: { mode: 'changes' },
                 plugins: {
                     legend: { display: false },
-                    tooltip: {
-                        filter: oneLinePerSegment,
-                        displayColors: false,
-                        callbacks: {
-                            title: () => '',
-                            label: ctx => segmentText({ 'Green': 'CHẠY', 'Yellow': 'CHỜ', 'Red': 'DỪNG', 'Off': 'TẮT' }[ctx.raw.segStatus], ctx.raw)
-                        }
-                    }
+                    tooltip: timeTooltip
                 },
                 scales: {
                     x: {
@@ -506,17 +499,10 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
-                interaction: { mode: 'segments' },
+                interaction: { mode: 'changes' },
                 plugins: {
                     legend: { display: false },
-                    tooltip: {
-                        filter: oneLinePerSegment,
-                        displayColors: false,
-                        callbacks: {
-                            title: () => '',
-                            label: ctx => segmentText(label + ' ON', ctx.raw)
-                        }
-                    }
+                    tooltip: timeTooltip
                 },
                 scales: {
                     x: {
