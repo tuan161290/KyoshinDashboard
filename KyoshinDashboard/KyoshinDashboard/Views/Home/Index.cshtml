@@ -437,27 +437,15 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
-                interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+                interaction: { mode: 'segments' },
                 plugins: {
                     legend: { display: false },
                     tooltip: {
+                        filter: oneLinePerSegment,
+                        displayColors: false,
                         callbacks: {
-                            title: (items) => {
-                                const raw = items[0]?.raw;
-                                if (!raw?.segStart) return '';
-                                const fmt = d => d.toLocaleTimeString('vi-VN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-                                return fmt(raw.segStart) + ' → ' + fmt(raw.segEnd);
-                            },
-                            label: (ctx) => {
-                                const raw = ctx.raw;
-                                const names = { 'Green': 'CHẠY', 'Yellow': 'CHỜ', 'Red': 'DỪNG', 'Off': 'TẮT' };
-                                if (ctx.dataset.label.startsWith('▶')) return ctx.dataset.label;
-                                const name = names[raw?.segStatus] || ctx.dataset.label;
-                                if (!raw?.segStart) return name;
-                                const dur = Math.round((raw.segEnd - raw.segStart) / 1000);
-                                const m = Math.floor(dur / 60), s = dur % 60;
-                                return name + ' — ' + (m > 0 ? m + 'p ' : '') + s + 's';
-                            }
+                            title: () => '',
+                            label: ctx => segmentText({ 'Green': 'CHẠY', 'Yellow': 'CHỜ', 'Red': 'DỪNG', 'Off': 'TẮT' }[ctx.raw.segStatus], ctx.raw)
                         }
                     }
                 },
@@ -518,26 +506,15 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
-                interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+                interaction: { mode: 'segments' },
                 plugins: {
                     legend: { display: false },
                     tooltip: {
-                        filter: (item) => item.raw.y > 0,
+                        filter: oneLinePerSegment,
+                        displayColors: false,
                         callbacks: {
-                            title: (items) => {
-                                const raw = items[0]?.raw;
-                                if (!raw?.segStart) return '';
-                                const fmt = d => d.toLocaleTimeString('vi-VN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-                                return fmt(raw.segStart) + ' → ' + fmt(raw.segEnd);
-                            },
-                            label: (ctx) => {
-                                const raw = ctx.raw;
-                                const state = raw.y === 1 ? 'ON' : 'OFF';
-                                if (!raw?.segStart) return state;
-                                const dur = Math.round((raw.segEnd - raw.segStart) / 1000);
-                                const m = Math.floor(dur / 60), s = dur % 60;
-                                return label + ' ' + state + ' — ' + (m > 0 ? m + 'p ' : '') + s + 's';
-                            }
+                            title: () => '',
+                            label: ctx => segmentText(label + ' ON', ctx.raw)
                         }
                     }
                 },

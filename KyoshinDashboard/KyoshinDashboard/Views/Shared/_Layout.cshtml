@@ -210,6 +210,30 @@
             return points;
         }
 
+        // Tooltip mode of the step charts: every point within 6 px of the mouse, so a pulse narrower than a pixel is
+        // still found (Chart.js 'nearest' only looks at the two points around the mouse); otherwise the nearest point
+        const SEGMENT_HIT_PX = 6;
+        Chart.Interaction.modes.segments = (chart, e, options, useFinalPosition) => {
+            const x = Chart.helpers.getRelativePosition(e, chart).x;
+            const items = [];
+            chart.getSortedVisibleDatasetMetas().forEach(meta => meta.data.forEach((element, index) => {
+                if (!element.skip && Math.abs(element.x - x) <= SEGMENT_HIT_PX) items.push({ element, datasetIndex: meta.index, index });
+            }));
+            return items.length ? items : Chart.Interaction.modes.nearest(chart, e, { ...options, intersect: false, axis: 'x' }, useFinalPosition);
+        };
+
+        // Tooltip filter: one line per segment (each segment has a point at both ends; OFF points of an error line have none)
+        const oneLinePerSegment = (item, i, items) => !!item.raw?.segStart
+            && items.findIndex(o => o.datasetIndex === item.datasetIndex && o.raw?.segStart === item.raw.segStart) === i;
+
+        // Tooltip line of a segment: "DỪNG 09:19:10 → 09:37:21 (18p 11s)"
+        function segmentText(name, raw) {
+            const clock = d => d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const sec = Math.round((raw.segEnd - raw.segStart) / 1000);
+            const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+            return `${name} ${clock(raw.segStart)} → ${clock(raw.segEnd)} (${h ? h + 'h ' : ''}${h || m ? m + 'p ' : ''}${s}s)`;
+        }
+
         // y-axis afterBuildTicks: exactly these ticks (Chart.js drops a tick close to the axis min, e.g. OFF at 0)
         const fixedTicks = (...values) => axis => { axis.ticks = values.map(value => ({ value })); };
 
