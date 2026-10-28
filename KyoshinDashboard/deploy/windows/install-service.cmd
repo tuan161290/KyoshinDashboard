@@ -99,6 +99,7 @@ echo.
 echo  Dashboard tren may nay : http://localhost:%PORT%
 echo  May khac trong xuong   : %LAN_URLS%
 echo  Agent                  : %MODE%
+echo  Ghi loi                : %ERRORS%
 echo.
 echo  Du lieu  : %SERVER_INST%\Kyoshin.db
 echo  Hang doi : %AGENT_INST%\agent.db  (du lieu chua gui khi Server tam dung)

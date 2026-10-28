@@ -77,6 +77,10 @@ try {
             $command = if ($plc.Command) { $plc.Command } else { 'WR' }
             if ($plc.UseMock) { $mode = 'GIA LAP - du lieu mo phong, khong doc PLC' }
             else { $mode = 'PLC that, cong ' + $plc.ComPort + ', doc X bang ' + $command + ', sum check ' + $plc.SumCheck + ', xac nhan ON ' + $onSec + ' s / OFF ' + $offSec + ' s' }
+            # Errors:OnlyWhenGreenOrYellow, missing = true (the server default)
+            $onlyGY = (Read-Json $serverCfg).Errors.OnlyWhenGreenOrYellow
+            if ($onlyGY -eq $false) { $errors = 'ghi loi doc lap, khong phu thuoc den (Errors:OnlyWhenGreenOrYellow = false)' }
+            else { $errors = 'chi ghi loi khi den Xanh/Vang (Errors:OnlyWhenGreenOrYellow = true)' }
 
             $ports = [IO.Ports.SerialPort]::GetPortNames() | Sort-Object
             $busy = ''
@@ -88,6 +92,7 @@ try {
 
             'PORT=' + $port
             'MODE=' + $mode
+            'ERRORS=' + $errors
             'AGENT_KEYSET=' + [bool]$agentKey
             'LINKED=' + [bool]($serverKey -and $serverKey -ne $placeholderKey -and $agentKey -eq $serverKey)
             if ($ports) { 'COMPORTS=' + ($ports -join ', ') } else { 'COMPORTS=khong co - kiem tra bo USB-RS485 va driver' }

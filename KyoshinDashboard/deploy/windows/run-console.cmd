@@ -37,6 +37,7 @@ echo ==========================================================================
 echo  KYOSHIN - CHAY THU
 echo ==========================================================================
 echo  Che do hien tai   : %MODE%
+echo  Ghi loi           : %ERRORS%
 echo  Cong COM tren may : %COMPORTS%
 echo  Web dashboard     : cong %PORT%
 echo.
@@ -69,6 +70,7 @@ echo  Web dashboard tren may nay : http://localhost:%PORT%
 echo  May khac trong xuong       : %LAN_URLS%
 echo                               (chi mo duoc sau khi chay install-service.cmd - mo firewall)
 echo  Agent                      : %MODE%
+echo  Ghi loi                    : %ERRORS%
 echo.
 echo  Xem log Agent ben duoi:
 echo     "Connected to FX PLC line on COMx"   = da mo cong COM cua PLC

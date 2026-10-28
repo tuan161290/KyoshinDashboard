@@ -79,7 +79,7 @@ Nhật ký cập nhật nằm ở `C:\Kyoshin\update.log`.
 | | `Plc:OnConfirmSeconds`, `Plc:OffConfirmSeconds` | Tín hiệu phải giữ nguyên bao lâu mới được xác nhận (mặc định 15 s) |
 | `KyoshinServer\appsettings.json` | `Kestrel:Endpoints:Http:Url` | Cổng web (mặc định 5000) |
 | | `DataSettings:RetentionDays` | Số ngày giữ log chi tiết; `0` = giữ hết (mặc định) |
-| | `Errors:OnlyWhenGreenOrYellow` | Chỉ ghi lỗi khi đèn Xanh/Vàng (mặc định `true`, như bản cũ) |
+| | `Errors:OnlyWhenGreenOrYellow` | `true` = chỉ ghi lỗi khi đèn Xanh/Vàng, lỗi bị cắt khi đèn chuyển Đỏ/Tắt (mặc định, như bản cũ); `false` = ghi lỗi độc lập, không phụ thuộc đèn. Đổi xong khởi động lại service KyoshinServer; chỉ áp dụng cho dữ liệu ghi từ lúc đó |
 
 Khóa API giữa Agent và Server được `install-service.cmd` tự tạo, không cần sửa tay.
 
