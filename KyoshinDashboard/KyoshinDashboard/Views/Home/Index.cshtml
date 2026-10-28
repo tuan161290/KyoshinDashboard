@@ -173,10 +173,9 @@
         errorEl.dataset.errorText = m.errorText || '';
 
         if (m.lastChange) {
-            const [h, min, s] = m.lastChange.split(':').map(Number);
-            const d = new Date();
-            d.setHours(h, min, s, 0);
-            machineLastChange[m.machineId] = d;
+            // "yyyy-MM-ddTHH:mm:ss" without a zone = local time
+            const d = new Date(m.lastChange);
+            if (!isNaN(d)) machineLastChange[m.machineId] = d;
         }
         updateElapsedTime(m.machineId);
     }
@@ -196,7 +195,9 @@
         const el = document.getElementById(`time-${machineId}`);
         if (!el) return;
         const start = machineLastChange[machineId];
-        if (!start) { el.textContent = ''; return; }
+        // no counter for a machine that is off
+        const off = document.getElementById(`machine-${machineId}`)?.classList.contains('status-off');
+        if (!start || off) { el.textContent = ''; return; }
         el.textContent = formatElapsed(Date.now() - start.getTime());
     }
 

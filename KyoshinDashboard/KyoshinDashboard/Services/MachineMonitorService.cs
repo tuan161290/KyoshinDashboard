@@ -427,7 +427,8 @@ namespace KyoshinDashboard.Services
             m.TrashSignal,
             m.OtherSignal,
             m.ErrorText,
-            LastChange = m.LastStatusChange.ToString("HH:mm:ss")
+            // Date and time (local, no zone): a change from an earlier day must not read as today
+            LastChange = m.LastStatusChange.ToString("yyyy-MM-ddTHH:mm:ss")
         };
 
         public static ShiftType GetCurrentShift(DateTime time)
