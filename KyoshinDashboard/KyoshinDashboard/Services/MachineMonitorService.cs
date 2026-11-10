@@ -421,7 +421,7 @@ namespace KyoshinDashboard.Services
             if (a.PlcStale)
                 _logger.LogWarning("The agent has not read the PLC since {LastRead:HH:mm:ss} — machine states are not updated", a.LastReadAt);
             else
-                _logger.LogWarning("The agent reads the PLC again — machine states are updated again");
+                _logger.LogInformation("The agent reads the PLC again — machine states are updated again");
         }
 
         private Task BroadcastAgentStatusAsync() =>

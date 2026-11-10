@@ -2023,3 +2023,123 @@ h3:hover .chart-dot {
 .raw-stale .raw-cell {
     opacity: 0.45;
 }
+
+/* ── Nhật ký hệ thống (/Logs) ── */
+.log-summary {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.log-count {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.log-auto {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.log-info {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: -8px 0 8px 2px;
+}
+
+.log-table td {
+    vertical-align: top;
+}
+
+.log-time {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.log-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 8px;
+    border-radius: 10px;
+    white-space: nowrap;
+    background: var(--gray-bg);
+    color: var(--text-secondary);
+}
+
+.log-badge.error {
+    background: var(--red-bg);
+    color: var(--red);
+}
+
+.log-badge.warning {
+    background: var(--yellow-bg);
+    color: var(--yellow);
+}
+
+.log-row.log-error td {
+    background: rgba(196, 43, 28, 0.06);
+}
+
+.log-msg {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 3.4em;
+    overflow: hidden;
+}
+
+.log-row.multi {
+    cursor: pointer;
+}
+
+.log-row.multi:not(.open) td:last-child {
+    box-shadow: inset -3px 0 0 var(--accent-border);
+}
+
+.log-row.open .log-msg {
+    max-height: none;
+}
+
+.log-cat {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.log-file {
+    margin-top: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+}
+
+.log-file summary {
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.log-file summary span {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-left: 8px;
+}
+
+.log-file.crash summary b {
+    color: var(--red);
+}
+
+.log-file pre {
+    margin: 0;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    max-height: 400px;
+    overflow: auto;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

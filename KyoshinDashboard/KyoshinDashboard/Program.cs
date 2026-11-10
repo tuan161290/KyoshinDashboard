@@ -17,6 +17,14 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 // Windows Service support (allows running as sc.exe service)
 builder.Host.UseWindowsService();
 
+// Windows event log (and the Nhật ký page): the server's own messages from Information up, not only the
+// warnings that the event log provider keeps by default
+if (OperatingSystem.IsWindows())
+{
+    builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>("KyoshinDashboard", LogLevel.Information);
+    builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>("Microsoft.Hosting.Lifetime", LogLevel.Information);
+}
+
 // Database — a relative SQLite path is resolved against the app folder (content root),
 // because a Windows Service runs with current directory = C:\Windows\System32
 var dbConnection = new SqliteConnectionStringBuilder(

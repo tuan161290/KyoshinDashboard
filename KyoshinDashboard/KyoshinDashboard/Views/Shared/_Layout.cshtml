@@ -48,6 +48,10 @@
                     <span class="nav-item-icon">📑</span>
                     <span class="nav-item-label">Báo cáo</span>
                 </a>
+                <a href="/Logs" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Logs" ? "active" : "")">
+                    <span class="nav-item-icon">🧾</span>
+                    <span class="nav-item-label">Nhật ký hệ thống</span>
+                </a>
             </div>
 
             <div class="sidebar-summary-group">

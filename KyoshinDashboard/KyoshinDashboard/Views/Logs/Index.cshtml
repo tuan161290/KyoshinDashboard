@@ -1,0 +1,182 @@
+@{
+    ViewData["Title"] = "Nhật ký hệ thống";
+}
+
+<div class="page-header">
+    <h1>🧾 Nhật ký hệ thống</h1>
+    <div class="log-summary" id="logSummary"></div>
+</div>
+
+<div class="io-toolbar">
+    <div class="io-search-box">
+        <span class="io-search-icon">🔍</span>
+        <input type="text" id="logSearch" placeholder="Tìm trong nội dung..." oninput="renderLogs(); saveLogFilters()" />
+    </div>
+    <div class="filter-controls">
+        <label>Thời gian:
+            <select id="logHours" onchange="saveLogFilters(); loadLogs()">
+                <option value="1">1 giờ qua</option>
+                <option value="24" selected>24 giờ qua</option>
+                <option value="168">7 ngày qua</option>
+                <option value="720">30 ngày qua</option>
+            </select>
+        </label>
+        <label>Nguồn:
+            <select id="logSource" onchange="renderLogs(); saveLogFilters()">
+                <option value="all">Tất cả</option>
+                <option value="agent">Agent (đọc PLC)</option>
+                <option value="server">Server (web)</option>
+            </select>
+        </label>
+        <label>Mức:
+            <select id="logLevel" onchange="renderLogs(); saveLogFilters()">
+                <option value="all">Tất cả</option>
+                <option value="warning">Cảnh báo và lỗi</option>
+                <option value="error">Chỉ lỗi</option>
+            </select>
+        </label>
+        <label class="log-auto"><input type="checkbox" id="logAuto" onchange="saveLogFilters(); setAutoRefresh()" /> Tự làm mới 30 s</label>
+        <button class="range-btn" onclick="loadLogs()">Làm mới</button>
+        <button class="range-btn" onclick="downloadLogs()" title="Tải các dòng đang hiển thị thành file .txt">Tải về</button>
+    </div>
+</div>
+
+<div class="log-info" id="logInfo">Đang tải...</div>
+
+<div class="history-table-wrapper" style="margin-top:0; max-height: calc(100vh - 260px); overflow-y: auto;">
+    <table class="data-table log-table">
+        <thead>
+            <tr>
+                <th style="width: 150px;">Thời gian</th>
+                <th style="width: 90px;">Nguồn</th>
+                <th style="width: 90px;">Mức</th>
+                <th>Nội dung</th>
+            </tr>
+        </thead>
+        <tbody id="logBody">
+            <tr><td colspan="4" class="empty-row">Đang tải...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<div id="logFiles"></div>
+
+@section Scripts {
+<script>
+    const SOURCE_NAMES = { agent: 'Agent', server: 'Server' };
+    const LEVEL_NAMES = { error: 'Lỗi', warning: 'Cảnh báo', info: 'Thông tin' };
+    const logState = pageState('logs');
+    let logEntries = [];
+    let autoTimer = null;
+
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    // "KyoshinAgent.PlcPollingService" → "PlcPollingService"
+    const shortCategory = c => c ? c.split('.').pop() : '';
+
+    function saveLogFilters() {
+        logState.save({
+            hours: document.getElementById('logHours').value,
+            source: document.getElementById('logSource').value,
+            level: document.getElementById('logLevel').value,
+            search: document.getElementById('logSearch').value,
+            auto: document.getElementById('logAuto').checked
+        });
+    }
+
+    async function loadLogs() {
+        const hours = document.getElementById('logHours').value;
+        const info = document.getElementById('logInfo');
+        info.textContent = 'Đang tải...';
+        try {
+            const res = await fetch(`/api/logs?hours=${hours}`);
+            if (!res.ok) throw new Error(res.status);
+            const data = await res.json();
+            if (!data.available) {
+                logEntries = [];
+                info.textContent = 'Nhật ký Windows chỉ đọc được khi Server chạy trên Windows.';
+            } else {
+                logEntries = data.entries;
+                const now = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+                info.textContent = `Cập nhật lúc ${now}` + (data.truncated ? ` · chỉ hiện ${data.maxEntries} dòng mới nhất, chọn khoảng thời gian ngắn hơn để xem đủ` : '');
+            }
+            renderLogs();
+            renderFiles(data.files || []);
+        } catch (err) {
+            info.textContent = 'Không tải được nhật ký: ' + err.message;
+        }
+    }
+
+    function filteredLogs() {
+        const source = document.getElementById('logSource').value;
+        const level = document.getElementById('logLevel').value;
+        const search = document.getElementById('logSearch').value.trim().toLowerCase();
+        return logEntries.filter(e =>
+            (source === 'all' || e.source === source) &&
+            (level === 'all' || e.level === 'error' || (level === 'warning' && e.level === 'warning')) &&
+            (!search || (e.message + ' ' + e.category).toLowerCase().includes(search)));
+    }
+
+    function renderLogs() {
+        const rows = filteredLogs();
+        const body = document.getElementById('logBody');
+        body.innerHTML = rows.length === 0
+            ? '<tr><td colspan="4" class="empty-row">Không có dòng nào</td></tr>'
+            : rows.map(e => {
+                const multi = e.message.includes('\n') || e.message.length > 220;
+                return `<tr class="log-row log-${e.level}${multi ? ' multi' : ''}">
+                    <td class="log-time">${esc(e.time)}</td>
+                    <td>${SOURCE_NAMES[e.source] || esc(e.source)}</td>
+                    <td><span class="log-badge ${e.level}">${LEVEL_NAMES[e.level] || esc(e.level)}</span></td>
+                    <td><div class="log-msg">${esc(e.message)}</div>${e.category ? `<div class="log-cat">${esc(shortCategory(e.category))}</div>` : ''}</td>
+                </tr>`;
+            }).join('');
+
+        const errors = logEntries.filter(e => e.level === 'error').length;
+        const warnings = logEntries.filter(e => e.level === 'warning').length;
+        document.getElementById('logSummary').innerHTML =
+            `<span class="log-badge error">${errors} lỗi</span> <span class="log-badge warning">${warnings} cảnh báo</span>` +
+            ` <span class="log-count">${rows.length} / ${logEntries.length} dòng</span>`;
+    }
+
+    function renderFiles(files) {
+        document.getElementById('logFiles').innerHTML = files.map(f => `
+            <details class="log-file${f.name === 'agent-crash.log' ? ' crash' : ''}">
+                <summary><b>${esc(f.name)}</b> <span>${esc(f.path)}</span></summary>
+                <pre>${esc(f.text)}</pre>
+            </details>`).join('');
+    }
+
+    // Long or multi-line messages (exceptions) open on click
+    document.getElementById('logBody').addEventListener('click', e => {
+        const row = e.target.closest('.log-row.multi');
+        if (row && !window.getSelection().toString()) row.classList.toggle('open');
+    });
+
+    function downloadLogs() {
+        const lines = filteredLogs().map(e =>
+            `${e.time}  ${(LEVEL_NAMES[e.level] || e.level).padEnd(9)} ${(SOURCE_NAMES[e.source] || e.source).padEnd(8)} ${shortCategory(e.category)}${e.category ? '  ' : ''}${e.message}`);
+        const blob = new Blob([lines.join('\r\n')], { type: 'text/plain;charset=utf-8' });
+        const a = document.createElement('a');
+        const d = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        a.href = URL.createObjectURL(blob);
+        a.download = `kyoshin-log-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.txt`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    function setAutoRefresh() {
+        clearInterval(autoTimer);
+        autoTimer = document.getElementById('logAuto').checked ? setInterval(loadLogs, 30000) : null;
+    }
+
+    const savedLog = logState.get();
+    restoreControl('logHours', savedLog.hours);
+    restoreControl('logSource', savedLog.source);
+    restoreControl('logLevel', savedLog.level);
+    restoreControl('logSearch', savedLog.search);
+    document.getElementById('logAuto').checked = !!savedLog.auto;
+    setAutoRefresh();
+    loadLogs();
+</script>
+}
