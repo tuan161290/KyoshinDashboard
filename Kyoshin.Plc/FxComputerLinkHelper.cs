@@ -45,7 +45,7 @@ namespace Kyoshin.Plc
 
         /// <summary>
         /// Open the serial port connection.
-        /// Returns true if successfully opened.
+        /// Returns true if successfully opened; otherwise <see cref="LastError"/> says why.
         /// </summary>
         public bool Open()
         {
@@ -56,16 +56,23 @@ namespace Kyoshin.Plc
                     _serialPort.Open();
                     Thread.Sleep(50);
                 }
+                LastError = null;
                 return true;
             }
-            catch (Exception)
+            catch (UnauthorizedAccessException)
             {
+                LastError = "access denied: another program has the port open (old ServiceGetSignal service, GX Works, a second agent?)";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                LastError = ex.Message;
                 return false;
             }
         }
 
         /// <summary>
-        /// Why the last ReadWords call failed (e.g. "PLC answered NAK, error code 06h ..." or "no answer"), or null after a success.
+        /// Why the last Open or ReadWords call failed (e.g. "PLC answered NAK, error code 06h ..." or "no answer"), or null after a success.
         /// </summary>
         public string LastError { get; private set; }
 
@@ -250,7 +257,7 @@ namespace Kyoshin.Plc
 
         /// <summary>
         /// Read expected number of bytes from serial port with timeout.
-        /// Returns actual number of bytes read into _readBuffer.
+        /// Returns actual number of bytes read into _readBuffer, starting at the STX/NAK of the answer.
         /// </summary>
         private async Task<int> ReadResponseAsync(int expectedLength)
         {
@@ -265,11 +272,27 @@ namespace Kyoshin.Plc
                             _readBuffer, totalRead, expectedLength - totalRead, cts.Token);
                         if (bytesRead == 0) break;
                         totalRead += bytesRead;
+                        totalRead -= DropLeadingNoise(_readBuffer, totalRead);
                     }
                 }
                 catch (OperationCanceledException) { }
             }
             return totalRead;
+        }
+
+        /// <summary>
+        /// Remove the bytes before the first STX/NAK (moving the rest to the front) and return how many were removed.
+        /// A noise byte such as 7Fh can come just before the answer, when the PLC switches the RS-485 line to transmit;
+        /// STX and NAK never occur inside an answer (its data is ASCII hex), so the answer starts at the first one.
+        /// </summary>
+        public static int DropLeadingNoise(byte[] buffer, int length)
+        {
+            int start = 0;
+            while (start < length && buffer[start] != STX && buffer[start] != NAK)
+                start++;
+            if (start > 0)
+                Buffer.BlockCopy(buffer, start, buffer, 0, length - start);
+            return start;
         }
 
         public bool IsOpen()
@@ -285,11 +308,20 @@ namespace Kyoshin.Plc
             }
         }
 
+        /// <summary>
+        /// Close the port. Never throws (a port whose USB adapter is gone fails to close). The read lock is left
+        /// undisposed: a read abandoned by the caller still releases it when its I/O finally ends.
+        /// </summary>
         public void Dispose()
         {
-            Close();
-            _serialPort?.Dispose();
-            _lock?.Dispose();
+            try
+            {
+                Close();
+                _serialPort?.Dispose();
+            }
+            catch (Exception)
+            {
+            }
         }
     }
 }

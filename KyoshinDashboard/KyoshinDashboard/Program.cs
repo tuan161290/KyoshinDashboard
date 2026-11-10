@@ -32,6 +32,8 @@ builder.Services.AddSignalR();
 // Machine state + logs, fed by the factory agent through POST /api/ingest (IngestController)
 builder.Services.AddSingleton<MachineMonitorService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MachineMonitorService>());
+// Unfiltered inputs for the RAW IO page (POST /api/ingest/raw), memory only
+builder.Services.AddSingleton<RawIoService>();
 // Background data aggregation (every 5 min)
 builder.Services.AddHostedService<DataAggregationService>();
 

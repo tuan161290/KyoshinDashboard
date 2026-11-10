@@ -32,6 +32,10 @@
                     <span class="nav-item-icon">🔌</span>
                     <span class="nav-item-label">Giám sát I/O</span>
                 </a>
+                <a href="/Home/RawIo" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "Home" && ViewContext.RouteData.Values["action"]?.ToString() == "RawIo" ? "active" : "")">
+                    <span class="nav-item-icon">📟</span>
+                    <span class="nav-item-label">RAW IO</span>
+                </a>
                 <a href="/History" class="nav-item @(ViewContext.RouteData.Values["controller"]?.ToString() == "History" ? "active" : "")">
                     <span class="nav-item-icon">📋</span>
                     <span class="nav-item-label">Lịch sử</span>
@@ -155,6 +159,10 @@
             } else if (a.mode === 'plc-offline') {
                 dot.className = 'connection-dot disconnected';
                 text.textContent = 'Xưởng: không mở được cổng COM';
+            } else if (a.plcStale) {
+                // Agent alive but not reading the PLC: machine states are frozen
+                dot.className = 'connection-dot disconnected';
+                text.textContent = `Xưởng: không đọc được PLC từ ${a.lastRead}`;
             } else if (a.mode === 'plc' && a.stationsOk < a.stationsTotal) {
                 dot.className = 'connection-dot connecting';
                 text.textContent = `Xưởng: PLC ${a.stationsOk}/${a.stationsTotal} station trả lời`;
@@ -171,11 +179,16 @@
             if (text) text.textContent = 'Máy chủ: đang kết nối lại...';
         });
 
+        // Pages that call the hub once connected, and again after a reconnect (the server forgets its groups)
+        const hubConnectedHandlers = [];
+        function onHubConnected(fn) { hubConnectedHandlers.push(fn); }
+
         connection.onreconnected(() => {
             const dot = document.getElementById('connectionDot');
             const text = document.getElementById('connectionText');
             if (dot) dot.className = 'connection-dot connected';
             if (text) text.textContent = 'Máy chủ: đã kết nối';
+            hubConnectedHandlers.forEach(fn => fn());
         });
 
         connection.onclose(() => {
@@ -273,6 +286,7 @@
             const text = document.getElementById('connectionText');
             if (dot) dot.className = 'connection-dot connected';
             if (text) text.textContent = 'Máy chủ: đã kết nối';
+            hubConnectedHandlers.forEach(fn => fn());
         }).catch(err => {
             const dot = document.getElementById('connectionDot');
             const text = document.getElementById('connectionText');

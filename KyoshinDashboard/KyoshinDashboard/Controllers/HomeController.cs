@@ -17,6 +17,12 @@ namespace KyoshinDashboard.Controllers
             return View(states);
         }
 
+        // Unfiltered inputs X of both stations, live (RawIoService)
+        public IActionResult RawIo()
+        {
+            return View();
+        }
+
         public IActionResult Error()
         {
             return View();

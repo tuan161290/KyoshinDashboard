@@ -62,8 +62,25 @@ namespace KyoshinAgent
     {
         private volatile string _mode = "starting";
         private volatile int _stationsOk;
+        private volatile Kyoshin.Plc.RawIoRequest? _rawIo;
+        private long _lastReadUtcTicks;  // 0 = never
+        private long _pollCount;
 
         public string Mode { get => _mode; set => _mode = value; }
         public int StationsOk { get => _stationsOk; set => _stationsOk = value; }
+
+        /// <summary>Last poll in which a station answered (IngestRequest.LastReadAt).</summary>
+        public DateTimeOffset? LastReadAt
+        {
+            get { long ticks = Interlocked.Read(ref _lastReadUtcTicks); return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero); }
+            set => Interlocked.Exchange(ref _lastReadUtcTicks, value?.UtcTicks ?? 0);
+        }
+
+        /// <summary>Polls done so far — PollingWatchdogService checks that it keeps going up.</summary>
+        public long PollCount => Interlocked.Read(ref _pollCount);
+        public void PollDone() => Interlocked.Increment(ref _pollCount);
+
+        /// <summary>Inputs of the last poll, unfiltered (RawIoUploaderService). Replaced on every poll, never changed.</summary>
+        public Kyoshin.Plc.RawIoRequest? RawIo { get => _rawIo; set => _rawIo = value; }
     }
 }

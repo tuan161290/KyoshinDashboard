@@ -38,7 +38,11 @@ namespace KyoshinDashboard.Services
 
         // Factory link (latest agent heartbeat)
         private static readonly object _agentLock = new();
-        private static AgentStatus _agent = new(false, null, "", 0);
+        private static AgentStatus _agent = new(false, null, "", 0, null, false);
+
+        // The agent reads the PLC every 0.5 s and reports at least every 10 s: a last read older than this means
+        // its polling stopped (or no station answers) even though the heartbeat still arrives
+        private static readonly TimeSpan PlcStaleAfter = TimeSpan.FromSeconds(30);
 
         public MachineMonitorService(
             ILogger<MachineMonitorService> logger,
@@ -82,17 +86,24 @@ namespace KyoshinDashboard.Services
             {
                 await Task.Delay(5000, stoppingToken);
 
-                AgentStatus? wentOffline = null;
+                AgentStatus before, after;
                 lock (_agentLock)
                 {
+                    before = _agent;
                     if (_agent.Online && DateTime.Now - _agent.LastSeen > _agentOfflineAfter)
-                        wentOffline = _agent = _agent with { Online = false };
+                        _agent = _agent with { Online = false, PlcStale = false };
+                    else
+                        _agent = _agent with { PlcStale = IsPlcStale(_agent) };
+                    after = _agent;
                 }
-                if (wentOffline != null)
-                {
-                    _logger.LogWarning("Factory agent offline — no data since {LastSeen:HH:mm:ss}", wentOffline.LastSeen);
-                    await BroadcastAgentStatusAsync();
-                }
+                if (after == before)
+                    continue;
+
+                if (!after.Online)
+                    _logger.LogWarning("Factory agent offline — no data since {LastSeen:HH:mm:ss}", after.LastSeen);
+                else
+                    LogPlcStaleChange(after);
+                await BroadcastAgentStatusAsync();
             }
         }
 
@@ -372,7 +383,7 @@ namespace KyoshinDashboard.Services
             var lastAgent = await db.AgentCursors.OrderByDescending(a => a.LastSeen).FirstOrDefaultAsync();
             if (lastAgent != null)
             {
-                lock (_agentLock) { _agent = new AgentStatus(false, lastAgent.LastSeen, "", 0); }
+                lock (_agentLock) { _agent = new AgentStatus(false, lastAgent.LastSeen, "", 0, null, false); }
             }
         }
 
@@ -380,18 +391,37 @@ namespace KyoshinDashboard.Services
         {
             bool changed;
             bool cameOnline;
+            bool staleChanged;
+            AgentStatus updated;
             lock (_agentLock)
             {
-                var updated = new AgentStatus(true, lastSeen, request.Mode, request.StationsOk);
+                updated = new AgentStatus(true, lastSeen, request.Mode, request.StationsOk, request.LastReadAt?.ToLocalTime().DateTime, false);
+                updated = updated with { PlcStale = IsPlcStale(updated) };
                 cameOnline = !_agent.Online;
-                changed = cameOnline || updated.Mode != _agent.Mode || updated.StationsOk != _agent.StationsOk;
+                staleChanged = updated.PlcStale != _agent.PlcStale;
+                changed = cameOnline || staleChanged || updated.Mode != _agent.Mode || updated.StationsOk != _agent.StationsOk;
                 _agent = updated;
             }
 
             if (cameOnline)
                 _logger.LogInformation("Factory agent online (mode {Mode}, {Stations} station(s) answering)", request.Mode, request.StationsOk);
+            if (staleChanged)
+                LogPlcStaleChange(updated);
             if (changed)
                 await BroadcastAgentStatusAsync();
+        }
+
+        // Agent online and reading the PLC (not "COM port can't be opened"), but no read for PlcStaleAfter.
+        // An agent before 1.0.12 doesn't send LastReadAt: never stale.
+        private static bool IsPlcStale(AgentStatus a) =>
+            a.Online && a.Mode != "plc-offline" && a.LastReadAt is DateTime read && DateTime.Now - read > PlcStaleAfter;
+
+        private void LogPlcStaleChange(AgentStatus a)
+        {
+            if (a.PlcStale)
+                _logger.LogWarning("The agent has not read the PLC since {LastRead:HH:mm:ss} — machine states are not updated", a.LastReadAt);
+            else
+                _logger.LogWarning("The agent reads the PLC again — machine states are updated again");
         }
 
         private Task BroadcastAgentStatusAsync() =>
@@ -408,7 +438,9 @@ namespace KyoshinDashboard.Services
                 LastSeen = agent.LastSeen?.ToString("HH:mm:ss dd/MM"),
                 agent.Mode,
                 agent.StationsOk,
-                StationsTotal = FxIoMap.Stations.Length
+                StationsTotal = FxIoMap.Stations.Length,
+                agent.PlcStale,
+                LastRead = agent.LastReadAt?.ToString("HH:mm:ss dd/MM")
             };
         }
 
@@ -461,6 +493,7 @@ namespace KyoshinDashboard.Services
             }
         }
 
-        private record AgentStatus(bool Online, DateTime? LastSeen, string Mode, int StationsOk);
+        // LastReadAt: last poll in which a PLC station answered (agent clock); PlcStale: see IsPlcStale
+        private record AgentStatus(bool Online, DateTime? LastSeen, string Mode, int StationsOk, DateTime? LastReadAt, bool PlcStale);
     }
 }

@@ -33,6 +33,7 @@ namespace Kyoshin.Plc
         public const int TOTAL_MACHINES = 48;
         public const int SIGNALS_PER_MACHINE = 3;
         public const int WORDS_PER_BLOCK = 5;
+        public const int INPUTS_PER_STATION = 2 * WORDS_PER_BLOCK * 16;   // X000~X237: status block then error block
 
         private const int ERROR_INPUT_OFFSET = 80;     // Error inputs start at X120 (octal) = input #80
 
@@ -96,10 +97,20 @@ namespace Kyoshin.Plc
         }
 
         /// <summary>Physical input in GX Works octal notation, e.g. "X000", "X117", "X120".</summary>
-        public static string GetInputLabel(int machineId, int signal, FxIoBlock block)
+        public static string GetInputLabel(int machineId, int signal, FxIoBlock block) =>
+            GetInputLabel(GetBitIndex(machineId, signal) + (block == FxIoBlock.Error ? ERROR_INPUT_OFFSET : 0));
+
+        /// <summary>Input #n (0~159) of a station in GX Works octal notation, e.g. 80 → "X120".</summary>
+        public static string GetInputLabel(int input) => "X" + Convert.ToString(input, 8).PadLeft(3, '0');
+
+        /// <summary>Machine and signal wired to input #n (0~159) of a station; null = spare input (X110~X117, X230~X237).</summary>
+        public static (int MachineId, FxIoBlock Block, int Signal)? GetInputSignal(int station, int input)
         {
-            int input = GetBitIndex(machineId, signal) + (block == FxIoBlock.Error ? ERROR_INPUT_OFFSET : 0);
-            return "X" + Convert.ToString(input, 8).PadLeft(3, '0');
+            var block = input < ERROR_INPUT_OFFSET ? FxIoBlock.Status : FxIoBlock.Error;
+            int bit = block == FxIoBlock.Error ? input - ERROR_INPUT_OFFSET : input;
+            if (input < 0 || bit >= MACHINES_PER_STATION * SIGNALS_PER_MACHINE)
+                return null;
+            return (station * MACHINES_PER_STATION + bit / SIGNALS_PER_MACHINE + 1, block, bit % SIGNALS_PER_MACHINE);
         }
 
         /// <summary>Signal name as in FXDataCommnunication, e.g. "M1RED", "M1_OUT_ERROR".</summary>

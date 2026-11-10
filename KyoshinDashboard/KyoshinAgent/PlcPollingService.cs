@@ -15,6 +15,10 @@ namespace KyoshinAgent
         private static readonly TimeSpan ReopenInterval = TimeSpan.FromSeconds(10);
         private const int MAX_FAILED_POLLS_BEFORE_REOPEN = 20; // ~10 s at 500 ms: e.g. USB-RS485 adapter replugged
 
+        // A block read ends within ~1 s even when the PLC doesn't answer (3 tries × 300 ms). One still running after
+        // this long is stuck in the serial driver and would stop all polling while the heartbeat goes on.
+        private static readonly TimeSpan ReadHangTimeout = TimeSpan.FromSeconds(5);
+
         private readonly ILogger<PlcPollingService> _logger;
         private readonly PlcOptions _options;
         private readonly OutboxStore _outbox;
@@ -83,6 +87,7 @@ namespace KyoshinAgent
                 {
                     _logger.LogError(ex, "Error polling PLC");
                 }
+                _state.PollDone();
 
                 await Task.Delay(_options.PollingIntervalMs, stoppingToken);
             }
@@ -94,23 +99,29 @@ namespace KyoshinAgent
         {
             _mock!.RandomStep();
             var readings = new List<MachineReading>();
+            var raw = new ushort[]?[FxIoMap.Stations.Length];
             for (int station = 0; station < FxIoMap.Stations.Length; station++)
             {
-                readings.AddRange(FxIoMap.DecodeStation(station,
-                    _mock.ReadWords(station, FxIoBlock.Status),
-                    _mock.ReadWords(station, FxIoBlock.Error)));
+                var statusWords = _mock.ReadWords(station, FxIoBlock.Status);
+                var errorWords = _mock.ReadWords(station, FxIoBlock.Error);
+                readings.AddRange(FxIoMap.DecodeStation(station, statusWords, errorWords));
+                raw[station] = [.. statusWords, .. errorWords];
             }
             _state.StationsOk = FxIoMap.Stations.Length;
+            _state.LastReadAt = DateTimeOffset.Now;
+            PublishRaw(raw);
             return readings;
         }
 
         private async Task<List<MachineReading>> ReadPlcAsync()
         {
             var readings = new List<MachineReading>();
+            var raw = new ushort[]?[FxIoMap.Stations.Length];
             if (!EnsurePlcOpen())
             {
                 _state.Mode = "plc-offline";
                 _state.StationsOk = 0;
+                PublishRaw(raw);
                 return readings;
             }
             _state.Mode = "plc";
@@ -121,10 +132,8 @@ namespace KyoshinAgent
                 string stationNo = FxIoMap.Stations[station];
                 string statusDevice = FxIoMap.GetBlockDevice(FxIoBlock.Status, _command);
                 string errorDevice = FxIoMap.GetBlockDevice(FxIoBlock.Error, _command);
-                var statusWords = await _plc!.ReadWords(stationNo, _command, statusDevice, FxIoMap.WORDS_PER_BLOCK);
-                string? statusProblem = _plc.LastError;
-                var errorWords = await _plc.ReadWords(stationNo, _command, errorDevice, FxIoMap.WORDS_PER_BLOCK);
-                string? errorProblem = _plc.LastError;
+                var (statusWords, statusProblem) = await ReadBlockAsync(stationNo, statusDevice);
+                var (errorWords, errorProblem) = await ReadBlockAsync(stationNo, errorDevice);
 
                 bool answered = statusWords != null && errorWords != null;
                 if (_stationOk[station] != answered)
@@ -141,21 +150,61 @@ namespace KyoshinAgent
                 if (answered)
                 {
                     readings.AddRange(FxIoMap.DecodeStation(station, statusWords!, errorWords!));
+                    raw[station] = [.. statusWords!, .. errorWords!];
                     ok++;
                 }
             }
             _state.StationsOk = ok;
+            if (ok > 0)
+                _state.LastReadAt = DateTimeOffset.Now;
+            PublishRaw(raw);
 
             // Nothing answers for a while: close and reopen the port (adapter unplugged/replugged)
             _failedPolls = ok == 0 ? _failedPolls + 1 : 0;
-            if (_failedPolls >= MAX_FAILED_POLLS_BEFORE_REOPEN)
+            if (_failedPolls >= MAX_FAILED_POLLS_BEFORE_REOPEN && _plc != null)
             {
                 _logger.LogWarning("No station answered for {Count} polls — reopening {ComPort}", _failedPolls, _options.ComPort);
-                _plc!.Dispose();
+                _plc.Dispose();
                 _plc = null;
                 _failedPolls = 0;
             }
             return readings;
+        }
+
+        /// <summary>
+        /// Read one 5-word block; (null, reason) if it fails. A read stuck in the serial driver is given up after
+        /// ReadHangTimeout: the port is dropped (closed in the background — that can block too) and opened again on the next poll.
+        /// </summary>
+        private async Task<(ushort[]? Words, string? Problem)> ReadBlockAsync(string station, string device)
+        {
+            var plc = _plc;
+            if (plc == null)
+                return (null, "COM port closed after a stuck read");
+            try
+            {
+                var words = await plc.ReadWords(station, _command, device, FxIoMap.WORDS_PER_BLOCK).WaitAsync(ReadHangTimeout);
+                return (words, plc.LastError);
+            }
+            catch (TimeoutException)
+            {
+                _logger.LogError("Reading station {Station} {Device} did not end within {Seconds} s — the COM port is stuck, closing {ComPort} to open it again",
+                    station, device, ReadHangTimeout.TotalSeconds, _options.ComPort);
+                _plc = null;
+                _ = Task.Run(plc.Dispose);
+                return (null, "read stuck in the serial driver");
+            }
+        }
+
+        /// <summary>The inputs just read, before the filter, for the RAW IO page (null = station did not answer).</summary>
+        private void PublishRaw(ushort[]?[] stationWords)
+        {
+            _state.RawIo = new RawIoRequest
+            {
+                AgentId = _outbox.AgentId,
+                Mode = _state.Mode,
+                Time = DateTimeOffset.Now,
+                Stations = stationWords.Select((words, i) => new RawStationInputs { Station = FxIoMap.Stations[i], Words = words }).ToList()
+            };
         }
 
         /// <summary>Open the COM port, retrying every 10 s. Never falls back to mock data.</summary>
@@ -178,8 +227,8 @@ namespace KyoshinAgent
 
             if (!_openFailedLogged)
             {
-                _logger.LogError("Failed to open FX PLC line on {ComPort} — retrying every {Seconds} s (no data is sent meanwhile)",
-                    _options.ComPort, ReopenInterval.TotalSeconds);
+                _logger.LogError("Failed to open FX PLC line on {ComPort} ({Reason}) — retrying every {Seconds} s (no data is sent meanwhile)",
+                    _options.ComPort, _plc.LastError, ReopenInterval.TotalSeconds);
                 _openFailedLogged = true;
             }
             _plc.Dispose();

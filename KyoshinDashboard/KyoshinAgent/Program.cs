@@ -1,6 +1,9 @@
 using System.Reflection;
 using KyoshinAgent;
 
+// Exceptions nothing caught go to agent-crash.log and the event log, with the stack trace
+CrashLog.Register();
+
 // Content root = exe folder, so appsettings.json and agent.db are found however the agent is started
 // (cmd from any folder, or as a Windows Service whose current directory is C:\Windows\System32)
 var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
@@ -23,6 +26,10 @@ builder.Services.AddHttpClient(UploaderService.HttpClientName, client => client.
 // Read the PLC and queue changes; upload the queue to the server
 builder.Services.AddHostedService<PlcPollingService>();
 builder.Services.AddHostedService<UploaderService>();
+// Unfiltered inputs for the RAW IO page
+builder.Services.AddHostedService<RawIoUploaderService>();
+// Restart the agent if PLC polling stops
+builder.Services.AddHostedService<PollingWatchdogService>();
 
 var host = builder.Build();
 var version = (typeof(PlcOptions).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "?").Split('+')[0];

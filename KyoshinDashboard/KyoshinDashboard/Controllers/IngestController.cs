@@ -22,18 +22,52 @@ namespace KyoshinDashboard.Controllers
         public const string PLACEHOLDER_KEY = "DOI-THANH-KHOA-BI-MAT-CUA-BAN";
 
         private readonly MachineMonitorService _monitor;
+        private readonly RawIoService _rawIo;
         private readonly IConfiguration _config;
         private readonly ILogger<IngestController> _logger;
 
-        public IngestController(MachineMonitorService monitor, IConfiguration config, ILogger<IngestController> logger)
+        public IngestController(MachineMonitorService monitor, RawIoService rawIo, IConfiguration config, ILogger<IngestController> logger)
         {
             _monitor = monitor;
+            _rawIo = rawIo;
             _config = config;
             _logger = logger;
         }
 
         [HttpPost]
         public async Task<IActionResult> Post([FromBody] IngestRequest request)
+        {
+            if (CheckAccess() is { } refused)
+                return refused;
+
+            if (string.IsNullOrWhiteSpace(request.AgentId) || request.AgentId.Length > 64)
+                return BadRequest("AgentId is required");
+            if (request.Events.Count > MAX_EVENTS_PER_REQUEST)
+                return BadRequest($"At most {MAX_EVENTS_PER_REQUEST} events per request");
+
+            long lastSeq = await _monitor.ApplyAsync(request);
+            return Ok(new IngestResponse { LastSeq = lastSeq });
+        }
+
+        /// <summary>POST /api/ingest/raw — the unfiltered inputs X for the RAW IO page (not stored).</summary>
+        [HttpPost("raw")]
+        public async Task<IActionResult> PostRaw([FromBody] RawIoRequest request)
+        {
+            if (CheckAccess() is { } refused)
+                return refused;
+
+            if (string.IsNullOrWhiteSpace(request.AgentId) || request.AgentId.Length > 64)
+                return BadRequest("AgentId is required");
+            if (request.Stations.Count > FxIoMap.Stations.Length
+                || request.Stations.Any(s => s.Words != null && s.Words.Length != FxIoMap.INPUTS_PER_STATION / 16))
+                return BadRequest($"At most {FxIoMap.Stations.Length} stations of {FxIoMap.INPUTS_PER_STATION / 16} words");
+
+            await _rawIo.UpdateAsync(request);
+            return Ok();
+        }
+
+        /// <summary>null = the agent may send; otherwise the answer refusing it.</summary>
+        private IActionResult? CheckAccess()
         {
             string expectedKey = _config["Ingest:ApiKey"] ?? "";
             if (expectedKey.Length == 0 || expectedKey == PLACEHOLDER_KEY)
@@ -52,14 +86,7 @@ namespace KyoshinDashboard.Controllers
                 _logger.LogWarning("Rejected ingest from {Ip}: not in Ingest:AllowedIps", HttpContext.Connection.RemoteIpAddress);
                 return StatusCode(StatusCodes.Status403Forbidden);
             }
-
-            if (string.IsNullOrWhiteSpace(request.AgentId) || request.AgentId.Length > 64)
-                return BadRequest("AgentId is required");
-            if (request.Events.Count > MAX_EVENTS_PER_REQUEST)
-                return BadRequest($"At most {MAX_EVENTS_PER_REQUEST} events per request");
-
-            long lastSeq = await _monitor.ApplyAsync(request);
-            return Ok(new IngestResponse { LastSeq = lastSeq });
+            return null;
         }
 
         private static bool IsAllowed(IPAddress? remote, string allowedIps)

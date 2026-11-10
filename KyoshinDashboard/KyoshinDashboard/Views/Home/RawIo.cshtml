@@ -1,0 +1,161 @@
+@{
+    ViewData["Title"] = "RAW IO";
+}
+
+@using Kyoshin.Plc
+@functions {
+    // Modules of one station, 32 inputs each, in X order (FX3UC-64MT + 4 × FX2NC-32EX)
+    static readonly string[] Modules = { "FX3UC-64MT", "FX2NC-32EX #1", "FX2NC-32EX #2", "FX2NC-32EX #3", "FX2NC-32EX #4" };
+    static readonly string[] LampNames = { "Đỏ", "Vàng", "Xanh" };
+    static readonly ErrorType[] ErrorTypes = { ErrorType.Out, ErrorType.Trash, ErrorType.Other };
+
+    // Name shown on an input and its ON colours (cell class, dot class); same colours as the I/O monitor
+    static (string Name, string Cell, string Dot) Describe(int station, int input)
+    {
+        var signal = FxIoMap.GetInputSignal(station, input);
+        if (signal == null)
+            return ("trống", "cell-spare-active", "dot-spare-glow");
+        var (machineId, block, s) = signal.Value;
+        if (block == FxIoBlock.Status)
+            return ($"M{machineId} {LampNames[s]}", s == 0 ? "cell-red-active" : s == 1 ? "cell-yellow-active" : "cell-green-active",
+                s == 0 ? "dot-red-glow" : s == 1 ? "dot-yellow-glow" : "dot-green-glow");
+        return ($"M{machineId} {ErrorNames.Short(ErrorTypes[s])}", s == 0 ? "cell-blue-active" : s == 1 ? "cell-red-active" : "cell-purple-active",
+            s == 0 ? "dot-blue-glow" : s == 1 ? "dot-red-glow" : "dot-purple-glow");
+    }
+}
+
+<div class="page-header">
+    <h1>📟 RAW IO - tín hiệu thô từ PLC</h1>
+</div>
+
+<div class="io-toolbar">
+    <div class="raw-info">
+        <span>Đọc lúc: <b id="rawTime">--:--:--</b></span>
+        <span>Agent đọc PLC mỗi 0,5 s và gửi ngay khi đầu vào thay đổi, <b>không qua bộ lọc chống nhiễu</b>.</span>
+    </div>
+    <div class="filter-controls">
+        <label>Station:
+            <select id="rawStationFilter" onchange="showStations()">
+                <option value="all">Tất cả Station</option>
+                @for (int s = 0; s < FxIoMap.Stations.Length; s++)
+                {
+                    int first = s * FxIoMap.MACHINES_PER_STATION + 1;
+                    <option value="@FxIoMap.Stations[s]">Station @FxIoMap.Stations[s] (M@(first) - M@(first + FxIoMap.MACHINES_PER_STATION - 1))</option>
+                }
+            </select>
+        </label>
+    </div>
+</div>
+
+<div class="raw-banner" id="rawBanner">Chưa nhận được dữ liệu từ Agent.</div>
+
+<div id="rawStations" class="raw-stale">
+    @for (int s = 0; s < FxIoMap.Stations.Length; s++)
+    {
+        string st = FxIoMap.Stations[s];
+        int first = s * FxIoMap.MACHINES_PER_STATION + 1;
+        <section class="raw-station" id="raw-station-@st" data-station="@st">
+            <div class="raw-station-head">
+                <h3>Station @st · M@(first) - M@(first + FxIoMap.MACHINES_PER_STATION - 1)</h3>
+                <span class="raw-chip" id="raw-chip-@st">Chưa có dữ liệu</span>
+                <span class="raw-count" id="raw-count-@st"></span>
+            </div>
+            <div class="raw-modules">
+                @for (int m = 0; m < Modules.Length; m++)
+                {
+                    <div class="raw-module">
+                        <div class="raw-module-head">
+                            <b>@Modules[m]</b>
+                            <span>@FxIoMap.GetInputLabel(m * 32) - @FxIoMap.GetInputLabel(m * 32 + 31)</span>
+                        </div>
+                        <div class="raw-cols">
+                            @for (int c = 0; c < 2; c++)
+                            {
+                                <div class="raw-col">
+                                    @for (int i = 0; i < 16; i++)
+                                    {
+                                        int input = m * 32 + c * 16 + i;
+                                        var (name, cellClass, dotClass) = Describe(s, input);
+                                        <div class="raw-cell @(cellClass == "cell-spare-active" ? "spare" : "")" data-input="@input" data-cell="@cellClass" data-dot="@dotClass">
+                                            <div class="io-grid-cell">
+                                                <span class="io-cell-address">@FxIoMap.GetInputLabel(input)</span>
+                                                <span class="raw-name">@name</span>
+                                                <span class="io-dot dot-off"></span>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+</div>
+
+@section Scripts {
+<script>
+    const rawConn = window.machineConnection;
+    const rawState = pageState('rawio');
+    const STALE_SECONDS = 12;   // the agent sends at least every 5 s
+    let rawReceivedAt = 0;      // Date.now() of the latest reading
+    let rawMode = '';
+
+    function showStations() {
+        const value = document.getElementById('rawStationFilter').value;
+        document.querySelectorAll('.raw-station').forEach(el => {
+            el.style.display = value === 'all' || el.dataset.station === value ? '' : 'none';
+        });
+        rawState.save({ station: value });
+    }
+
+    function updateStation(station, words) {
+        const card = document.getElementById(`raw-station-${station}`);
+        if (!card) return;
+        card.classList.toggle('no-answer', !words);
+        let on = 0;
+        card.querySelectorAll('.raw-cell').forEach(cell => {
+            const n = +cell.dataset.input;
+            const isOn = !!words && ((words[n >> 4] >> (n & 15)) & 1) === 1;
+            if (isOn) on++;
+            if (cell.classList.contains(cell.dataset.cell) !== isOn) {
+                cell.classList.toggle(cell.dataset.cell, isOn);
+                cell.querySelector('.io-dot').className = 'io-dot ' + (isOn ? cell.dataset.dot : 'dot-off');
+            }
+        });
+        const chip = document.getElementById(`raw-chip-${station}`);
+        chip.textContent = words ? 'Đang đọc' : 'Không trả lời';
+        chip.className = 'raw-chip ' + (words ? 'ok' : 'bad');
+        document.getElementById(`raw-count-${station}`).textContent = words ? `${on} đầu vào ON` : '';
+    }
+
+    function updateBanner() {
+        const banner = document.getElementById('rawBanner');
+        const age = (Date.now() - rawReceivedAt) / 1000;
+        let text = '';
+        if (!rawReceivedAt) text = 'Chưa nhận được dữ liệu từ Agent.';
+        else if (age > STALE_SECONDS) text = `Không nhận được dữ liệu mới từ Agent (${Math.round(age)} s) - Agent đã dừng hoặc mất kết nối.`;
+        else if (rawMode === 'plc-offline') text = 'Agent không mở được cổng COM của PLC.';
+        else if (rawMode === 'mock') text = 'Dữ liệu GIẢ LẬP (Plc:UseMock = true), không phải PLC thật.';
+        banner.textContent = text;
+        banner.style.display = text ? '' : 'none';
+        document.getElementById('rawStations').classList.toggle('raw-stale', !rawReceivedAt || age > STALE_SECONDS);
+    }
+
+    rawConn.on('RawIo', p => {
+        rawReceivedAt = Date.now() - p.ageSeconds * 1000;
+        rawMode = p.mode;
+        document.getElementById('rawTime').textContent = p.time;
+        p.stations.forEach(s => updateStation(s.station, s.words));
+        updateBanner();
+    });
+
+    // Join the "rawio" group once connected (and again after a reconnect)
+    onHubConnected(() => rawConn.invoke('WatchRawIo').catch(err => console.error(err)));
+
+    setInterval(updateBanner, 1000);
+    restoreControl('rawStationFilter', rawState.get().station);
+    showStations();
+</script>
+}

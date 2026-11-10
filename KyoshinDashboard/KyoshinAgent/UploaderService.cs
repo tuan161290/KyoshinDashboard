@@ -73,6 +73,7 @@ namespace KyoshinAgent
                             AgentId = _outbox.AgentId,
                             Mode = _state.Mode,
                             StationsOk = _state.StationsOk,
+                            LastReadAt = _state.LastReadAt,
                             Events = batch
                         })
                     };

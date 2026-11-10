@@ -1885,3 +1885,141 @@ h3:hover .chart-dot {
         height: calc((100vh - 260px) * 0.19);
     }
 }
+/* ── RAW IO page: unfiltered inputs X, one card per station, laid out by module ── */
+.raw-info {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.raw-banner {
+    background: var(--yellow-bg);
+    border: 1px solid var(--yellow-border);
+    border-radius: var(--radius-card);
+    color: var(--text-primary);
+    font-size: 13px;
+    padding: 8px 14px;
+    margin-bottom: 16px;
+}
+
+.raw-station {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    padding: 12px 16px 16px;
+    margin-bottom: 16px;
+}
+
+.raw-station-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.raw-station-head h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.raw-chip {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 10px;
+    background: var(--gray-bg);
+    color: var(--text-secondary);
+}
+
+.raw-chip.ok {
+    background: var(--green-bg);
+    color: var(--green);
+}
+
+.raw-chip.bad {
+    background: var(--red-bg);
+    color: var(--red);
+}
+
+.raw-count {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.raw-modules {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 12px;
+}
+
+.raw-module {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 8px;
+}
+
+.raw-module-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.raw-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.raw-col {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.raw-cell .io-grid-cell {
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 3px 6px;
+}
+
+.raw-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.raw-cell.spare .raw-name {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* A spare input that is ON: something is wired where nothing is expected */
+.cell-spare-active .io-grid-cell {
+    background: var(--accent-bg);
+    border-color: var(--accent-border);
+}
+
+.dot-spare-glow {
+    background-color: var(--accent);
+    box-shadow: 0 0 10px var(--accent), 0 0 4px var(--accent);
+}
+
+/* No answer from the station, or no recent data from the agent */
+.raw-station.no-answer .raw-cell,
+.raw-stale .raw-cell {
+    opacity: 0.45;
+}
